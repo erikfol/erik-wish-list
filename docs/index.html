@@ -71,11 +71,13 @@
         <form method="dialog" id="signin-form">
             <h2>Family sign-in</h2>
             <p class="hint">Signing in lets you add wishes, change them, and mark what you're getting. Ask Erik for the family passcode.</p>
+            <label><span>Your name <span class="hint">(so others can see who's getting what)</span></span>
+                <select id="name" required>
+                    <option value="">Choose your name…</option>
+                </select>
+            </label>
             <label>Family passcode
                 <input id="passcode" type="password" autocomplete="current-password" required>
-            </label>
-            <label><span>Your name <span class="hint">(so others can see who's getting what)</span></span>
-                <input id="name" type="text" maxlength="60" autocomplete="given-name" required placeholder="e.g. Aunt Sue">
             </label>
             <p id="signin-error" class="error" hidden></p>
             <div class="dialog-actions">

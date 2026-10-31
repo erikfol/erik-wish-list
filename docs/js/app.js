@@ -1,6 +1,6 @@
 // Erik's Wish List. The list lives in a Google Sheet behind apps-script/Code.gs: anyone can
 // read it, and every change needs the family passcode. With no SCRIPT_URL it's a demo kept in this browser.
-import { SCRIPT_URL } from './config.js';
+import { SCRIPT_URL, NAMES } from './config.js';
 
 const OWNER = 'Erik';
 const PRIORITY = { 3: 'Top pick', 2: 'Would love', 1: 'Nice to have' };
@@ -349,10 +349,10 @@ async function unclaim(item, button) {
 function openSignIn(then, message) {
     afterSignIn = then || null;
     $('passcode').value = '';
-    $('name').value = session.name;
+    $('name').value = NAMES.includes(session.name) ? session.name : '';
     showError('signin-error', message);
     $('signin-dialog').showModal();
-    (session.name ? $('passcode') : $('name')).focus();
+    ($('name').value ? $('passcode') : $('name')).focus();
 }
 
 function signOut() {
@@ -680,6 +680,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 if (['priority', 'low', 'high', 'new'].includes(saved.get('wish-sort'))) $('sort').value = saved.get('wish-sort');
+$('name').append(...NAMES.map(name => h('option', { value: name }, name)));
 $('demo-banner').hidden = !DEMO;
 render();
 load();

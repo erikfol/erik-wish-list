@@ -5,14 +5,14 @@ A shareable wish list at **https://erikfol.github.io/erik-wish-list/** (once Git
 Each wish has a picture, a link to the product, the price, the store, how much Erik wants it (Top pick, Would love, Nice to have) and details like size or color. Friends and family tap **🎁 I'll get this** on what they're buying, so nobody doubles up.
 
 - **Anyone with the link can look.** Visitors who aren't signed in see "Someone is getting this" on what's taken.
-- **Changing anything needs the family passcode**: adding, editing or deleting wishes, and marking what you're getting. The passcode is checked by Google, not by the web page, so it can't be found by looking at the page's code. Each person signs in once per device with the passcode and their name.
+- **Changing anything needs the family passcode**: adding, editing or deleting wishes, and marking what you're getting. The passcode is checked by Google, not by the web page, so it can't be found by looking at the page's code. Each person signs in once per device: they pick their name from the list and type the passcode. The names are in `NAMES` in `docs/js/config.js`; add or remove names there. Everyone choosing **Guest** shares that one name, so one Guest can undo another Guest's "I'll get this" without being asked.
 - **Fill in from link**: paste a product link and the page tries to fill in the name, picture and price from the store's page. Some stores (Amazon often) block this, so you fill those in by hand. For the picture, right-click (or press and hold) the product's photo, choose "Copy image address", and paste it into the Picture box.
 - **No-spoiler mode** (link at the bottom of the page) hides what people are getting, on that device only. It's meant for Erik.
-- **Admin**: sign in with the name **Admin** and a **⚙ Admin** button appears at the top (see below).
+- **Admin**: sign in as **Admin** (it's in the name list) and a **⚙ Admin** button appears at the top (see below).
 
 ## Admin
 
-Sign in with the name `Admin`. Until you set an admin passcode, Admin uses the family passcode, which means anyone who knows the family passcode can sign in as Admin. Setting an admin passcode fixes that. The ⚙ Admin panel has:
+Sign in as `Admin` (pick it from the name list). Until you set an admin passcode, Admin uses the family passcode, which means anyone who knows the family passcode can sign in as Admin. Setting an admin passcode fixes that. The ⚙ Admin panel has:
 
 - **Family passcode**: see the current one, or change it. Anyone using the old one is asked for the new one the next time they try to change something.
 - **Admin passcode**: set it (or change it) so only you can sign in as Admin. After that, the family passcode no longer works for the name Admin.
@@ -51,7 +51,7 @@ Until `SCRIPT_URL` in `docs/js/config.js` is filled in, the page runs as a **dem
 - **Change the passcode** (for example, if it got passed around too far): sign in as Admin and use ⚙ Admin → Family passcode. It takes effect right away.
 - **Edit in the sheet:** the `Items` tab is the list, and the page shows any changes made there. `priority` is 3 (Top pick), 2 (Would love) or 1 (Nice to have). Keep the header row; the columns can be in any order.
 - **After changing `Code.gs`:** paste it into Apps Script again, then **Deploy → Manage deployments → ✎ (Edit) → Version: New version → Deploy**. This keeps the same URL.
-- **Good to know:** everything on the list is public to anyone with the link, including the names people sign in with, which are kept with what they're getting. Use first names or initials.
+- **Good to know:** everything on the list is public to anyone with the link, including the names people sign in with, which are kept with what they're getting.
 
 ## Try it on this computer
 
