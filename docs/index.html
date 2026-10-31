@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Erik's Wish List</title>
+    <meta name="description" content="Gift ideas for Erik. Tap “I'll get this” so nobody doubles up.">
+    <meta property="og:title" content="Erik's Wish List">
+    <meta property="og:description" content="Gift ideas for Erik. Tap “I'll get this” so nobody doubles up.">
+    <meta property="og:type" content="website">
+    <meta name="theme-color" content="#1a1a2e">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/wishlist.css">
+    <script type="module" src="js/app.js"></script>
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">🎁 <span id="brand-name">Erik's Wish List</span></div>
+        <div class="top-actions">
+            <button id="share" class="top-btn" type="button" title="Share this page">Share</button>
+            <span id="who" class="who" hidden></span>
+            <button id="signin" class="top-btn" type="button">🔒 Family sign-in</button>
+        </div>
+    </header>
+
+    <div id="demo-banner" class="banner" hidden>
+        <strong>Demo mode.</strong> This page isn't connected to its Google Sheet yet, so changes are saved only in this browser.
+        Follow “Setup” in the README to connect it. Any passcode works in demo mode.
+    </div>
+
+    <main>
+        <section class="intro">
+            <div>
+                <h1 id="title">Erik's Wish List</h1>
+                <p id="summary" class="lead"></p>
+                <p id="how" class="how"></p>
+            </div>
+            <button id="add" class="btn primary" type="button" hidden>＋ Add a wish</button>
+        </section>
+
+        <div id="toolbar" class="toolbar">
+            <label>Sort
+                <select id="sort">
+                    <option value="priority">Top picks first</option>
+                    <option value="low">Price: low to high</option>
+                    <option value="high">Price: high to low</option>
+                    <option value="new">Newest first</option>
+                </select>
+            </label>
+            <label id="show-wrap">Show
+                <select id="show">
+                    <option value="all">Everything</option>
+                    <option value="open">Still available</option>
+                    <option value="taken">Already taken</option>
+                </select>
+            </label>
+        </div>
+
+        <div id="list" class="grid" aria-live="polite"></div>
+        <p id="status" class="status"></p>
+    </main>
+
+    <footer class="footer">
+        <span id="spoiler-text"></span>
+        <button id="spoilers" class="link-btn" type="button"></button>
+    </footer>
+
+    <!-- Family sign-in -->
+    <dialog id="signin-dialog">
+        <form method="dialog" id="signin-form">
+            <h2>Family sign-in</h2>
+            <p class="hint">Signing in lets you add wishes, change them, and mark what you're getting. Ask Erik for the family passcode.</p>
+            <label>Family passcode
+                <input id="passcode" type="password" autocomplete="current-password" required>
+            </label>
+            <label><span>Your name <span class="hint">(so others can see who's getting what)</span></span>
+                <input id="name" type="text" maxlength="60" autocomplete="given-name" required placeholder="e.g. Aunt Sue">
+            </label>
+            <p id="signin-error" class="error" hidden></p>
+            <div class="dialog-actions">
+                <button type="button" class="btn" data-close>Cancel</button>
+                <button type="submit" class="btn primary">Sign in</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Add or change a wish -->
+    <dialog id="item-dialog">
+        <form method="dialog" id="item-form">
+            <h2 id="item-title">Add a wish</h2>
+            <label>Link to the product
+                <span class="row">
+                    <input id="f-url" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://…">
+                    <button id="fill" type="button" class="btn">Fill in from link</button>
+                </span>
+            </label>
+            <p id="fill-status" class="hint"></p>
+            <label><span>Name <span class="req">*</span></span>
+                <input id="f-name" type="text" maxlength="200" required>
+            </label>
+            <div class="pic-field">
+                <img id="f-preview" alt="" referrerpolicy="no-referrer" hidden>
+                <label>Picture (image address)
+                    <input id="f-image" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="https://…">
+                    <span class="hint">On the product page, right-click (or press and hold) the picture → “Copy image address”, then paste it here.</span>
+                </label>
+            </div>
+            <div class="two">
+                <label>Price
+                    <input id="f-price" type="text" inputmode="decimal" maxlength="40" placeholder="24.99">
+                </label>
+                <label>Store
+                    <input id="f-store" type="text" maxlength="80" placeholder="Amazon">
+                </label>
+            </div>
+            <label><span id="f-priority-label">How much Erik wants it</span>
+                <select id="f-priority">
+                    <option value="3">Top pick</option>
+                    <option value="2">Would love</option>
+                    <option value="1">Nice to have</option>
+                </select>
+            </label>
+            <label>Details
+                <textarea id="f-details" rows="3" maxlength="1000" placeholder="Size, color, model, how many… anything that helps"></textarea>
+            </label>
+            <p id="item-error" class="error" hidden></p>
+            <div class="dialog-actions">
+                <button id="delete" type="button" class="btn danger" hidden>Delete</button>
+                <span class="spacer"></span>
+                <button type="button" class="btn" data-close>Cancel</button>
+                <button type="submit" class="btn primary">Save</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Are you sure? -->
+    <dialog id="confirm-dialog">
+        <form method="dialog">
+            <p id="confirm-text"></p>
+            <div class="dialog-actions">
+                <button type="button" class="btn" data-close>Cancel</button>
+                <button id="confirm-ok" type="button" class="btn primary"></button>
+            </div>
+        </form>
+    </dialog>
+
+    <div id="toast" role="status"></div>
+</body>
+</html>
