@@ -3,19 +3,22 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Erik's Wish List</title>
-    <meta name="description" content="Gift ideas for Erik. Tap “I'll get this” so nobody doubles up.">
-    <meta property="og:title" content="Erik's Wish List">
-    <meta property="og:description" content="Gift ideas for Erik. Tap “I'll get this” so nobody doubles up.">
+    <title>Erik's Christmas List</title>
+    <meta name="description" content="Christmas gift ideas for Erik. Tap “I'll get this” so nobody doubles up.">
+    <meta property="og:title" content="Erik's Christmas List">
+    <meta property="og:description" content="Christmas gift ideas for Erik. Tap “I'll get this” so nobody doubles up.">
     <meta property="og:type" content="website">
-    <meta name="theme-color" content="#1a1a2e">
+    <meta name="theme-color" content="#0e3b2a">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&display=swap">
     <link rel="stylesheet" href="css/wishlist.css">
     <script type="module" src="js/app.js"></script>
 </head>
 <body>
     <header class="topbar">
-        <div class="brand">🎁 <span id="brand-name">Erik's Wish List</span></div>
+        <div class="brand">🎄 <span id="brand-name">Erik's Christmas List</span></div>
         <div class="top-actions">
             <button id="share" class="top-btn" type="button" title="Share this page">Share</button>
             <span id="who" class="who" hidden></span>
@@ -23,6 +26,7 @@
             <button id="signin" class="top-btn" type="button">🔒 Family sign-in</button>
         </div>
     </header>
+    <div class="lights" aria-hidden="true"></div>
 
     <div id="demo-banner" class="banner" hidden>
         <strong>Demo mode.</strong> This page isn't connected to its Google Sheet yet, so changes are saved only in this browser.
@@ -32,7 +36,7 @@
     <main>
         <section class="intro">
             <div>
-                <h1 id="title">Erik's Wish List</h1>
+                <h1 id="title">Erik's Christmas List</h1>
                 <p id="summary" class="lead"></p>
                 <p id="how" class="how"></p>
             </div>

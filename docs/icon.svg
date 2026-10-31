@@ -1,6 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect x="8" y="26" width="48" height="32" rx="4" fill="#e0533d"/>
-  <rect x="4" y="18" width="56" height="12" rx="3" fill="#f26b55"/>
-  <rect x="28" y="18" width="8" height="40" fill="#f5c518"/>
-  <path d="M32 18c-6-12-20-10-16-2 2 3 10 2 16 2zm0 0c6-12 20-10 16-2-2 3-10 2-16 2z" fill="#f5c518"/>
+  <rect x="28" y="54" width="8" height="8" rx="1" fill="#7b4a26"/>
+  <polygon points="32,10 46,30 18,30" fill="#1f7a4d"/>
+  <polygon points="32,20 52,44 12,44" fill="#1a6b43"/>
+  <polygon points="32,32 58,56 6,56" fill="#165a3d"/>
+  <circle cx="26" cy="27" r="2.6" fill="#e53935"/>
+  <circle cx="38" cy="38" r="2.6" fill="#fbc02d"/>
+  <circle cx="22" cy="41" r="2.6" fill="#6db8ff"/>
+  <circle cx="34" cy="50" r="2.6" fill="#e53935"/>
+  <circle cx="46" cy="52" r="2.6" fill="#fbc02d"/>
+  <circle cx="16" cy="53" r="2.6" fill="#fbc02d"/>
+  <polygon points="32,2 33.76,6.57 38.66,6.84 34.85,9.93 36.11,14.66 32,12 27.89,14.66 29.15,9.93 25.34,6.84 30.24,6.57" fill="#f5c518"/>
 </svg>

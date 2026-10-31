@@ -264,7 +264,7 @@ function render() {
 function emptyState() {
     if (items.length) return h('div', { class: 'empty' }, 'Nothing to show with this filter.');
     return h('div', { class: 'empty' },
-        h('div', { class: 'big' }, '🎁'),
+        h('div', { class: 'big' }, '🎄'),
         h('p', {}, 'No wishes on the list yet.'),
         h('p', {}, session.passcode ? 'Tap “＋ Add a wish” to start it.' : 'Check back soon!'));
 }

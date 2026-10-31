@@ -1,15 +1,19 @@
+/* Christmas colors: pine green, holly red, gold, on warm cream */
 :root {
-    --bg: #f5f7fa;
+    --bg: #f7f3ea;
     --surface: #ffffff;
-    --text: #2d2d2d;
-    --muted: #777;
-    --line: #e3e6ec;
-    --navy: #1a1a2e;
-    --navy-2: #16213e;
-    --blue: #4a90d9;
-    --red: #e0533d;
-    --green: #2f9e5b;
-    --gold: #f5c518;
+    --text: #2b2b2b;
+    --muted: #756f66;
+    --line: #ebe4d6;
+    --pine: #0e3b2a;
+    --pine-2: #165a3d;
+    --holly: #b3261e;
+    --holly-2: #8e1b16;
+    --accent: #1f7a4d;
+    --red: #c62828;
+    --green: #2e8b57;
+    --gold: #d4a017;
+    --festive: 'Playfair Display', Georgia, 'Times New Roman', serif;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -24,7 +28,7 @@ body {
 
 /* ---- Top bar ---- */
 .topbar {
-    background: linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+    background: linear-gradient(135deg, var(--pine) 0%, var(--pine-2) 100%);
     color: #fff;
     padding: 10px 24px;
     display: flex;
@@ -32,7 +36,7 @@ body {
     gap: 12px;
     flex-wrap: wrap;
 }
-.brand { font-weight: 700; font-size: 1.15em; letter-spacing: -0.3px; }
+.brand { font-family: var(--festive); font-weight: 700; font-size: 1.25em; }
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .top-btn {
     background: rgba(255,255,255,0.12);
@@ -47,6 +51,23 @@ body {
 .top-btn:hover { background: rgba(255,255,255,0.22); }
 .who { font-size: 0.88em; opacity: 0.85; }
 
+/* A string of Christmas lights hanging under the top bar */
+.lights {
+    height: 18px;
+    background-image:
+        radial-gradient(circle at 12px 10px, #ff6b5e 0 4px, rgba(229, 57, 53, 0.35) 5px, transparent 8px),
+        radial-gradient(circle at 36px 10px, #ffe066 0 4px, rgba(251, 192, 45, 0.35) 5px, transparent 8px),
+        radial-gradient(circle at 60px 10px, #5fd17a 0 4px, rgba(67, 160, 71, 0.35) 5px, transparent 8px),
+        radial-gradient(circle at 84px 10px, #6db8ff 0 4px, rgba(30, 136, 229, 0.35) 5px, transparent 8px),
+        linear-gradient(to right, transparent 10px, var(--pine-2) 10px 14px, transparent 14px), /* each bulb's cap */
+        linear-gradient(var(--pine-2), var(--pine-2));                                          /* the wire */
+    background-size: 96px 18px, 96px 18px, 96px 18px, 96px 18px, 24px 5px, 100% 2px;
+    background-position: 0 0, 0 0, 0 0, 0 0, 0 1px, 0 0;
+    background-repeat: repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, no-repeat;
+    animation: twinkle 2.4s ease-in-out infinite alternate;
+}
+@keyframes twinkle { to { filter: brightness(1.3) saturate(1.2); } }
+
 .banner {
     background: #fff6d6;
     border-bottom: 1px solid #f0dc8c;
@@ -58,12 +79,59 @@ body {
 
 main { width: 100%; max-width: 1100px; margin: 28px auto; padding: 0 16px 40px; flex: 1; }
 
-/* ---- Intro and toolbar ---- */
-.intro { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+/* ---- Intro: a red banner with snow falling ---- */
+.intro {
+    position: relative;
+    overflow: hidden;
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 18px;
+    padding: 26px 28px;
+    border-radius: 12px;
+    color: #fff;
+    background: linear-gradient(135deg, var(--holly-2) 0%, var(--holly) 55%, #c43b2f 100%);
+    box-shadow: 0 2px 10px rgba(142, 27, 22, 0.25);
+}
+.intro > * { position: relative; z-index: 1; }
 .intro > div { flex: 1; }
-h1 { font-size: 1.6em; margin-bottom: 6px; }
-.lead { color: var(--muted); }
-.how { margin-top: 8px; font-size: 0.92em; line-height: 1.45; max-width: 640px; }
+h1 { font-family: var(--festive); font-size: 2.1em; line-height: 1.15; margin-bottom: 6px; }
+.lead { color: rgba(255, 255, 255, 0.85); }
+.how { margin-top: 8px; font-size: 0.92em; line-height: 1.45; max-width: 640px; color: rgba(255, 255, 255, 0.95); }
+.intro .btn.primary { background: #fff; border-color: #fff; color: var(--holly); font-weight: 600; }
+.intro .btn.primary:hover { background: #fdf0ee; }
+/* Two layers of snowflakes, each a tile of dots that slides down one tile height and repeats */
+.intro::before, .intro::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    top: calc(-1 * var(--tile));
+    height: calc(100% + var(--tile));
+    pointer-events: none;
+    background-size: var(--tile) var(--tile);
+    animation: snow var(--speed) linear infinite;
+}
+.intro::before {
+    --tile: 240px; --speed: 16s;
+    background-image:
+        radial-gradient(circle at 20px 30px, rgba(255,255,255,0.9) 0 2px, transparent 2.5px),
+        radial-gradient(circle at 95px 120px, rgba(255,255,255,0.8) 0 3px, transparent 3.5px),
+        radial-gradient(circle at 160px 55px, rgba(255,255,255,0.7) 0 1.5px, transparent 2px),
+        radial-gradient(circle at 215px 185px, rgba(255,255,255,0.9) 0 2.5px, transparent 3px),
+        radial-gradient(circle at 55px 205px, rgba(255,255,255,0.6) 0 2px, transparent 2.5px),
+        radial-gradient(circle at 135px 225px, rgba(255,255,255,0.8) 0 1.5px, transparent 2px);
+}
+.intro::after {
+    --tile: 170px; --speed: 10s;
+    opacity: 0.6;
+    background-image:
+        radial-gradient(circle at 40px 20px, #fff 0 1.5px, transparent 2px),
+        radial-gradient(circle at 120px 80px, #fff 0 1px, transparent 1.5px),
+        radial-gradient(circle at 75px 140px, #fff 0 1.5px, transparent 2px),
+        radial-gradient(circle at 150px 160px, #fff 0 1px, transparent 1.5px);
+}
+@keyframes snow { to { transform: translateY(var(--tile)); } }
+@media (prefers-reduced-motion: reduce) {
+    .intro::before, .intro::after, .lights { animation: none; }
+}
 
 .toolbar { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
 .toolbar label { font-size: 0.85em; color: var(--muted); display: flex; align-items: center; gap: 6px; }
@@ -76,7 +144,7 @@ select, input, textarea {
     border-radius: 6px;
     padding: 7px 9px;
 }
-select:focus, input:focus, textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: var(--blue); }
+select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 
 /* ---- Buttons ---- */
 .btn {
@@ -96,14 +164,14 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--blue); outl
     white-space: nowrap;
 }
 .btn:hover { background: #f0f3f7; }
-.btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
-.btn.primary:hover { background: #3b7fc6; }
+.btn.primary { background: var(--holly); border-color: var(--holly); color: #fff; }
+.btn.primary:hover { background: var(--holly-2); }
 .btn.claim { background: var(--green); border-color: var(--green); color: #fff; }
-.btn.claim:hover { background: #278a4e; }
+.btn.claim:hover { background: #24704a; }
 .btn.danger { color: #b3261e; border-color: #e7b5b1; }
 .btn.danger:hover { background: #fdeceb; }
 .btn:disabled { opacity: 0.55; cursor: default; }
-.link-btn { background: none; border: none; color: var(--blue); font: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
+.link-btn { background: none; border: none; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; padding: 0; }
 
 /* ---- The list: one row per wish ---- */
 .list {
@@ -122,7 +190,7 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--blue); outl
     transition: background 0.15s;
 }
 .card + .card { border-top: 1px solid var(--line); }
-.card:hover { background: #fafbfd; }
+.card:hover { background: #fdfbf6; }
 .pic {
     display: block;
     width: 96px; height: 96px;
@@ -136,7 +204,7 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--blue); outl
     width: 100%; height: 100%;
     display: flex; align-items: center; justify-content: center;
     font-size: 2.2em;
-    background: linear-gradient(135deg, #f3f5f9, #e8ecf3);
+    background: linear-gradient(135deg, #faf5ea, #f0e7d5);
 }
 .card-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .card h3 { font-size: 1.02em; line-height: 1.3; }
@@ -149,7 +217,7 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--blue); outl
     background: #eef1f6; color: #556;
 }
 .badge.p3 { background: var(--red); color: #fff; }
-.badge.p2 { background: #dce9f8; color: #245a92; }
+.badge.p2 { background: #fbefcd; color: #7a5300; }
 .details { font-size: 0.86em; line-height: 1.4; white-space: pre-line; color: #444; }
 .side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .price { font-weight: 700; font-size: 1.15em; white-space: nowrap; }
@@ -223,7 +291,7 @@ dialog.wide { width: min(640px, calc(100% - 32px)); }
 #toast {
     position: fixed; left: 50%; bottom: 24px;
     transform: translateX(-50%) translateY(20px);
-    background: var(--navy); color: #fff;
+    background: var(--pine); color: #fff;
     padding: 10px 18px; border-radius: 8px;
     font-size: 0.92em;
     box-shadow: 0 4px 14px rgba(0,0,0,0.25);
@@ -239,9 +307,9 @@ dialog.wide { width: min(640px, calc(100% - 32px)); }
     .topbar { padding: 10px 16px; }
     .banner { padding: 10px 16px; }
     main { margin-top: 20px; }
-    .intro { flex-direction: column; }
+    .intro { flex-direction: column; align-items: stretch; padding: 20px 18px; }
     .intro .btn { width: 100%; }
-    h1 { font-size: 1.35em; }
+    h1 { font-size: 1.7em; }
     /* Picture and name side by side, the price and buttons on a line under them */
     .card { grid-template-columns: 64px minmax(0, 1fr); gap: 10px 12px; padding: 12px 14px; align-items: start; }
     .pic { width: 64px; height: 64px; }

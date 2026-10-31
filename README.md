@@ -1,6 +1,6 @@
 # Erik's Wish List
 
-A shareable wish list at **https://erikfol.github.io/erik-wish-list/** (once GitHub Pages is on, see Setup).
+A shareable wish list, titled **Erik's Christmas List** on the page, at **https://erikfol.github.io/erik-wish-list/** (once GitHub Pages is on, see Setup).
 
 Each wish has a picture, a link to the product, the price, the store, how much Erik wants it (Top pick, Would love, Nice to have) and details like size or color. Friends and family tap **🎁 I'll get this** on what they're buying, so nobody doubles up.
 
