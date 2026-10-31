@@ -316,28 +316,95 @@ function unclaimItem(id) {
 
 // ---- Fill in from a link ----
 
-// Best effort: reads the product page's title, picture and price. Some stores (Amazon
-// often) turn away requests from Google's servers, so any of these can come back blank.
+// Best effort: reads the product page's title, picture and price. Some stores turn away
+// requests from Google's servers, so any of these can come back blank. Amazon usually does:
+// for an Amazon link the picture comes from the product's id and the name is guessed from the
+// link (nameGuessed), and the page (docs/js/app.js) asks a link-preview service for the rest.
 function previewLink(url) {
   url = cleanLink(url);
   if (!url) return {};
+  url = followShortLink(url);
   const out = { store: storeName(url) };
-  let html;
-  try {
-    const res = UrlFetchApp.fetch(url, {
-      muteHttpExceptions: true,
-      followRedirects: true,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-    if (res.getResponseCode() >= 400) return out;
-    html = res.getContentText().slice(0, 1500000);
-  } catch (err) {
-    return out;
+  const asin = amazonId(url);
+  if (asin) {
+    out.amazon = true;
+    out.link = url.match(/^https?:\/\/[^/]+/i)[0] + '/dp/' + asin; // the product's page without the tracking bits
   }
-  return Object.assign(out, parseProductPage(html, url));
+  const html = fetchPage(out.link || url);
+  if (html) Object.assign(out, parseProductPage(html, url));
+  if (asin) {
+    if (!out.image) out.image = amazonPicture(asin);
+    if (!out.name) {
+      out.name = nameFromLink(url);
+      if (out.name) out.nameGuessed = true;
+    }
+  }
+  Object.keys(out).forEach(k => { if (out[k] === '') delete out[k]; });
+  return out;
+}
+
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+};
+
+// The page's HTML, or '' if it couldn't be read or the store showed a robot check instead.
+function fetchPage(url) {
+  try {
+    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: BROWSER_HEADERS });
+    if (res.getResponseCode() >= 400) return '';
+    const html = res.getContentText().slice(0, 1500000);
+    return /validateCaptcha|api-services-support@amazon\.com|Type the characters you see/i.test(html) ? '' : html;
+  } catch (err) {
+    return '';
+  }
+}
+
+// Amazon's share links (a.co/d/…, amzn.to/…) redirect to the product's real link.
+function followShortLink(url) {
+  for (let hop = 0; hop < 5 && /^https?:\/\/(a\.co|amzn\.[a-z]+)\//i.test(url); hop++) {
+    try {
+      const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: false, headers: BROWSER_HEADERS });
+      const headers = res.getHeaders();
+      const next = headers.Location || headers.location;
+      if (!next) break;
+      url = absolute(String(next), url);
+    } catch (err) {
+      break;
+    }
+  }
+  return url;
+}
+
+// The 10-character product id in an Amazon link (…/dp/B00006JSUA), or ''.
+function amazonId(url) {
+  if (!/^https?:\/\/([^/]+\.)?amazon\.[a-z.]+\//i.test(url)) return '';
+  const m = url.match(/\/(?:dp|gp\/product|gp\/aw\/d|exec\/obidos\/asin|o\/asin)\/([A-Z0-9]{10})(?=[/?#&]|$)/i);
+  return m ? m[1].toUpperCase() : '';
+}
+
+// Amazon serves a product's main picture by its id. One it doesn't have comes back as a tiny blank image.
+function amazonPicture(asin) {
+  const link = 'https://m.media-amazon.com/images/P/' + asin + '.01._SCLZZZZZZZ_.jpg';
+  try {
+    const res = UrlFetchApp.fetch(link, { muteHttpExceptions: true });
+    return res.getResponseCode() === 200 && res.getContent().length > 1000 ? link : '';
+  } catch (err) {
+    return '';
+  }
+}
+
+// amazon.com/Lodge-Cast-Iron-Skillet/dp/… → "Lodge Cast Iron Skillet"
+function nameFromLink(url) {
+  const m = url.match(/^https?:\/\/[^/]+\/([^/?#]+)\/(?:dp|gp\/product)\//i);
+  if (!m) return '';
+  let words = m[1];
+  try {
+    words = decodeURIComponent(words);
+  } catch (err) { /* keep it as it is */ }
+  words = words.replace(/[-_+]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return /[a-z]/i.test(words) ? words.slice(0, LIMITS.name) : '';
 }
 
 function parseProductPage(html, url) {
@@ -350,12 +417,14 @@ function parseProductPage(html, url) {
   const product = jsonLdProduct(html);
   const out = {};
 
-  let name = meta['og:title'] || meta['twitter:title'] || (product && product.name);
+  const amazonTitle = html.match(/id="productTitle"[^>]*>([\s\S]*?)<\/span>/i);
+  let name = (amazonTitle && amazonTitle[1]) || meta['og:title'] || meta['twitter:title'] || (product && product.name);
   if (!name) {
     const t = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     if (t) name = t[1];
   }
-  if (name) out.name = decodeEntities(name).replace(/\s+/g, ' ').trim().replace(/^Amazon\.com\s*:\s*/i, '').slice(0, LIMITS.name);
+  if (name) name = decodeEntities(name).replace(/\s+/g, ' ').trim().replace(/^Amazon\.[a-z.]+\s*:\s*/i, '');
+  if (name && !/^amazon(\.[a-z.]+)?$/i.test(name)) out.name = name.slice(0, LIMITS.name);
 
   let image = meta['og:image'] || meta['og:image:secure_url'] || meta['twitter:image'] || meta['image'];
   if (!image && product && product.image) {
@@ -375,7 +444,11 @@ function parseProductPage(html, url) {
     price = offer && (offer.price || offer.lowPrice);
   }
   if (!price) {
-    const m = html.match(/class="a-offscreen">\s*\$([\d,]+\.\d\d)/) || html.match(/itemprop="price"[^>]*content="([\d.,]+)"/);
+    // Amazon: the buy box's price, else the first price shown.
+    const m = html.match(/id="corePrice(?:Display_desktop)?_feature_div"[\s\S]{0,4000}?class="a-offscreen">\s*[^\d<]*([\d,]+\.\d\d)/) ||
+              html.match(/"priceAmount":\s*([\d.]+)/) ||
+              html.match(/class="a-offscreen">\s*[^\d<]*([\d,]+\.\d\d)/) ||
+              html.match(/itemprop="price"[^>]*content="([\d.,]+)"/);
     if (m) price = m[1];
   }
   if (price) {

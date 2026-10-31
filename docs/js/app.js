@@ -258,11 +258,10 @@ function render() {
     $('spoilers').textContent = noSpoilers ? 'Show what people are getting' : "Turn on no-spoiler mode so you can't see what people are getting";
 
     const list = visibleItems();
-    $('list').replaceChildren(...(list.length ? list.map(card) : [emptyState()]));
+    $('list').replaceChildren(...(list.length ? list.map(card) : loadedAt ? [emptyState()] : []));
 }
 
 function emptyState() {
-    if (!loadedAt) return h('div', { hidden: true });
     if (items.length) return h('div', { class: 'empty' }, 'Nothing to show with this filter.');
     return h('div', { class: 'empty' },
         h('div', { class: 'big' }, '🎁'),
@@ -286,11 +285,9 @@ function card(item) {
     const picBox = url
         ? h('a', { class: 'pic', href: url, target: '_blank', rel: 'noopener noreferrer', tabindex: '-1' }, pic)
         : h('div', { class: 'pic' }, pic);
-    picBox.append(h('span', { class: `badge p${item.priority}` }, PRIORITY[item.priority]));
 
-    const meta = [item.price && h('span', { class: 'price' }, priceText(item.price)), item.store]
-        .filter(Boolean)
-        .flatMap((part, i) => (i ? [' · ', part] : [part]));
+    const added = dateText(item.added);
+    const meta = [item.store, added && `Added ${added}`].filter(Boolean).join(' · ');
 
     let note = null;
     if (taken) {
@@ -309,10 +306,11 @@ function card(item) {
         picBox,
         h('div', { class: 'card-body' },
             h('h3', {}, url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, item.name) : item.name),
-            meta.length > 0 && h('div', { class: 'meta' }, meta),
+            h('div', { class: 'meta' }, h('span', { class: `badge p${item.priority}` }, PRIORITY[item.priority]), meta),
             item.details && h('p', { class: 'details' }, item.details),
-            note,
-            dateText(item.added) && h('div', { class: 'added' }, `Added ${dateText(item.added)}`),
+            note),
+        h('div', { class: 'side' },
+            item.price && h('div', { class: 'price' }, priceText(item.price)),
             h('div', { class: 'actions' },
                 url && h('a', { class: 'btn', href: url, target: '_blank', rel: 'noopener noreferrer' }, 'View it ↗'),
                 claimButton,
@@ -423,6 +421,34 @@ function showPicture() {
     if (image && img.getAttribute('src') !== image) img.src = image;
 }
 
+const AMAZON_LINK = /^https?:\/\/(a\.co|amzn\.[a-z]+|([^/]+\.)?amazon\.[a-z.]+)\//i;
+
+// Asks microlink.io (a free link-preview service, a few lookups a day per internet connection)
+// for an Amazon product's name, price and picture. Answers {} when it can't.
+async function previewService(url) {
+    const query = new URLSearchParams({
+        url,
+        'data.price.selector': '#corePrice_feature_div .a-offscreen', 'data.price.type': 'text',
+        'data.price2.selector': '.a-price .a-offscreen', 'data.price2.type': 'text',
+        'data.picture.selector': '#landingImage', 'data.picture.attr': 'data-old-hires',
+        'data.picture2.selector': '#landingImage', 'data.picture2.attr': 'src',
+    });
+    try {
+        const { status, data = {} } = await (await fetch('https://api.microlink.io/?' + query)).json();
+        if (status !== 'success') return {};
+        const found = {};
+        const name = String(data.title || '').trim();
+        if (name && !/^amazon(\.[a-z.]+)?$/i.test(name)) found.name = name;
+        const price = priceNumber(data.price || data.price2);
+        if (price) found.price = price.toFixed(2);
+        const picture = safeLink(data.picture) || safeLink(data.picture2);
+        if (picture) found.image = picture;
+        return found;
+    } catch {
+        return {};
+    }
+}
+
 async function fillFromLink(auto) {
     fixLink($('f-url'));
     const url = safeLink($('f-url').value);
@@ -436,14 +462,22 @@ async function fillFromLink(auto) {
     }
     $('fill-status').textContent = 'Looking at the store page…';
     try {
-        const { preview = {} } = await working($('fill'), 'Looking…', () => send('preview', { url }));
+        const preview = await working($('fill'), 'Looking…', async () => {
+            const { preview: fromSheet = {} } = await send('preview', { url });
+            // Amazon turns the sheet's script away, so ask a link-preview service for what it couldn't get.
+            const amazon = fromSheet.amazon || AMAZON_LINK.test(url);
+            if (!amazon || (fromSheet.name && !fromSheet.nameGuessed && fromSheet.price)) return fromSheet;
+            const fromService = await previewService(fromSheet.link || url);
+            return { ...fromSheet, ...fromService, nameGuessed: fromSheet.nameGuessed && !fromService.name };
+        });
         if ($('f-url').value.trim() !== url) return; // the link changed while we looked
         const found = ['name', 'image', 'price', 'store'].filter(f => preview[f]);
         const filled = found.filter(f => !$(FIELDS[f]).value.trim());
         filled.forEach(f => { $(FIELDS[f]).value = preview[f]; });
         showPicture();
         $('fill-status').textContent =
-            filled.length ? `Filled in the ${filled.join(', ')} from the store page. Check it over.`
+            filled.length ? `Filled in the ${filled.map(f => (f === 'image' ? 'picture' : f)).join(', ')} from the store page. Check it over.` +
+                (filled.includes('name') && preview.nameGuessed ? " The store didn't share the name, so it's a guess from the link." : '')
             : found.length ? 'Nothing new to fill in (only empty boxes get filled).'
             : "That store didn't share its details, so fill them in by hand.";
     } catch (err) {
