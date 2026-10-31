@@ -17,7 +17,7 @@ const saved = {
 
 let items = [];
 let loadedAt = 0;
-let session = { passcode: saved.get('wish-passcode') || '', name: saved.get('wish-name') || '' };
+let session = { passcode: saved.get('wish-passcode') || '', name: saved.get('wish-name') || '', admin: saved.get('wish-admin') === '1' };
 let noSpoilers = saved.get('wish-no-spoilers') === '1';
 let editing = null;      // the wish open in the edit dialog ({} for a new one)
 let afterSignIn = null;  // what to do once signed in (claiming a wish starts there)
@@ -154,6 +154,11 @@ function dateText(iso) {
     return d.toLocaleDateString('en-US', opts);
 }
 
+function dateTimeText(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? '' : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 'es'}`;
 
 let toastTimer;
@@ -187,6 +192,9 @@ function handleError(err) {
     if (err.code === 'wrong-passcode') {
         signOut();
         openSignIn(null, `That passcode didn't work. It may have changed, so ask ${OWNER} for the new one.`);
+    } else if (err.code === 'not-admin') {
+        signOut();
+        openSignIn(null, 'Sign in with the name Admin to use the Admin tools.');
     } else if (err.code === 'already-claimed') {
         toast(`${err.claimedBy} is already getting that one.`);
     } else if (err.code === 'no-passcode-set') {
@@ -234,6 +242,7 @@ function render() {
     $('who').hidden = !signedIn;
     $('who').textContent = `Hi, ${session.name}`;
     $('add').hidden = !signedIn;
+    $('admin-btn').hidden = !(signedIn && session.admin);
     $('show-wrap').hidden = noSpoilers;
 
     const open = items.filter(i => !i.claimedBy).length;
@@ -347,31 +356,35 @@ function openSignIn(then, message) {
 }
 
 function signOut() {
-    session = { passcode: '', name: session.name };
+    session = { passcode: '', name: session.name, admin: false };
     saved.remove('wish-passcode');
+    saved.remove('wish-admin');
     render();
 }
 
 $('signin-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const next = { passcode: $('passcode').value.trim(), name: $('name').value.trim() };
+    const next = { passcode: $('passcode').value.trim(), name: $('name').value.trim(), admin: false };
     const before = session;
     session = next;
     try {
-        await working(e.submitter || $('signin-form').querySelector('[type=submit]'), 'Checking…', () => send('check'));
+        const out = await working(e.submitter || $('signin-form').querySelector('[type=submit]'), 'Checking…', () => send('check'));
+        next.admin = !!out.isAdmin;
     } catch (err) {
         session = before;
         showError('signin-error',
-            err.code === 'wrong-passcode' ? `That passcode isn't right. Ask ${OWNER} for it.`
+            err.code === 'wrong-passcode' && next.name.toLowerCase() === 'admin' ? "That passcode doesn't work for Admin."
+            : err.code === 'wrong-passcode' ? `That passcode isn't right. Ask ${OWNER} for it.`
             : err.code === 'no-passcode-set' ? 'The sheet has no PASSCODE set up yet (README → Setup).'
             : "Couldn't reach the list. Check your connection and try again.");
         return;
     }
     saved.set('wish-passcode', next.passcode);
     saved.set('wish-name', next.name);
+    if (next.admin) saved.set('wish-admin', '1'); else saved.remove('wish-admin');
     $('signin-dialog').close();
     render();
-    toast(`Signed in. Hi, ${next.name}!`);
+    toast(next.admin ? 'Signed in as Admin. The Admin tools are under ⚙ Admin at the top.' : `Signed in. Hi, ${next.name}!`);
     const then = afterSignIn;
     afterSignIn = null;
     if (then) then();
@@ -490,6 +503,137 @@ $('delete').addEventListener('click', async () => {
 });
 
 $('add').addEventListener('click', () => openItem(null));
+
+// ---- Admin (sign in with the name Admin) ----
+
+let adminInfo = null; // from the sheet: familyPasscode, hasAdminPasscode, deleted, log
+
+const ACTIVITY = {
+    added: w => `added “${w}”`,
+    changed: w => `changed “${w}”`,
+    deleted: w => `deleted “${w}”`,
+    claimed: w => `is getting “${w}”`,
+    unclaimed: w => `marked “${w}” as available again`,
+    restored: w => `brought back “${w}”`,
+    'removed-taken': n => `cleared ${plural(Number(n), 'wish')} people got`,
+    'family-passcode': () => 'changed the family passcode',
+    'admin-passcode': () => 'set the admin passcode',
+};
+const SPOILERS = ['claimed', 'unclaimed'];
+
+function renderAdmin() {
+    const info = adminInfo;
+    $('admin-loading').hidden = !!info;
+    document.querySelectorAll('#admin-dialog .admin-section').forEach(s => { s.hidden = !info; });
+    if (!info) return;
+
+    $('admin-pass-status').textContent = info.hasAdminPasscode
+        ? "Admin has its own passcode, so the family passcode isn't enough to sign in as Admin. Type a new one here to change it."
+        : 'Right now Admin signs in with the family passcode, so anyone who knows it can sign in as Admin. Set an admin passcode that only you know.';
+    $('set-admin-pass').textContent = info.hasAdminPasscode ? 'Change' : 'Set';
+
+    $('deleted-list').replaceChildren(...(info.deleted.length ? info.deleted.map(d => h('div', { class: 'admin-row' },
+        h('div', { class: 'what' }, d.name, h('div', { class: 'when' }, `Deleted ${dateTimeText(d.deleted)} by ${d.deletedBy || 'someone'}`)),
+        h('button', { class: 'btn', type: 'button', onclick: e => adminDo(e.currentTarget, 'Restoring…', 'restore', { id: d.id },
+            () => toast(`“${d.name}” is back on the list.`)) }, 'Restore')))
+        : [h('div', { class: 'none' }, 'Nothing has been deleted lately.')]));
+
+    const taken = items.filter(i => i.claimedBy).length;
+    $('remove-taken').textContent = noSpoilers ? 'Clear the wishes people got' : `Clear the ${plural(taken, 'wish')} people got`;
+    $('remove-taken').disabled = !noSpoilers && !taken;
+
+    const log = info.log.filter(l => !noSpoilers || !SPOILERS.includes(l.action));
+    $('log-note').textContent = noSpoilers ? "No-spoiler mode is on, so who's getting what is left out." : '';
+    $('log-list').replaceChildren(...(log.length ? log.map(l => h('div', { class: 'admin-row' },
+        h('div', { class: 'what' }, `${l.who} ${(ACTIVITY[l.action] || (() => l.action))(l.wish)}`),
+        h('div', { class: 'when' }, dateTimeText(l.when))))
+        : [h('div', { class: 'none' }, 'Nothing yet.')]));
+}
+
+// A wrong passcode (or not being Admin) goes back to signing in; anything else shows in the panel.
+function adminFailed(err) {
+    if (err.code === 'wrong-passcode' || err.code === 'not-admin') {
+        $('admin-dialog').close();
+        handleError(err);
+        return;
+    }
+    showError('admin-error', err.code === 'network' ? "Couldn't reach the list. Check your connection and try again." : err.message);
+}
+
+async function openAdmin() {
+    adminInfo = null;
+    renderAdmin();
+    $('new-pass').value = '';
+    $('new-admin-pass').value = '';
+    $('cur-pass').textContent = '••••••';
+    $('show-pass').textContent = 'Show';
+    showError('admin-error', '');
+    $('admin-dialog').showModal();
+    try {
+        adminInfo = (await send('admin-info')).adminInfo;
+        renderAdmin();
+    } catch (err) {
+        adminFailed(err);
+    }
+}
+
+async function adminDo(button, label, action, data, done) {
+    showError('admin-error', '');
+    try {
+        const out = await working(button, label, () => send(action, data));
+        adminInfo = out.adminInfo;
+        render();
+        renderAdmin();
+        done();
+    } catch (err) {
+        adminFailed(err);
+    }
+}
+
+function keepPasscode(passcode) {
+    session.passcode = passcode;
+    saved.set('wish-passcode', passcode);
+}
+
+$('admin-btn').addEventListener('click', openAdmin);
+$('admin-form').addEventListener('submit', e => e.preventDefault());
+
+$('show-pass').addEventListener('click', () => {
+    const showing = $('show-pass').textContent === 'Hide';
+    $('cur-pass').textContent = showing ? '••••••' : adminInfo.familyPasscode;
+    $('show-pass').textContent = showing ? 'Show' : 'Hide';
+});
+
+$('set-pass').addEventListener('click', e => {
+    const newPasscode = $('new-pass').value.trim();
+    if (!newPasscode) return showError('admin-error', 'Type the new family passcode first.');
+    const adminUsesIt = !adminInfo.hasAdminPasscode; // until there's an admin passcode, Admin signs in with this one
+    adminDo(e.currentTarget, 'Changing…', 'set-passcode', { newPasscode }, () => {
+        if (adminUsesIt) keepPasscode(newPasscode);
+        $('new-pass').value = '';
+        $('cur-pass').textContent = '••••••';
+        $('show-pass').textContent = 'Show';
+        toast('Family passcode changed. Let everyone know the new one.');
+    });
+});
+
+$('set-admin-pass').addEventListener('click', e => {
+    const newPasscode = $('new-admin-pass').value.trim();
+    if (!newPasscode) return showError('admin-error', 'Type the admin passcode first.');
+    adminDo(e.currentTarget, 'Saving…', 'set-admin-passcode', { newPasscode }, () => {
+        keepPasscode(newPasscode);
+        $('new-admin-pass').value = '';
+        toast('Admin passcode set. Use it with the name Admin from now on.');
+    });
+});
+
+$('remove-taken').addEventListener('click', async e => {
+    const button = e.currentTarget;
+    const taken = items.filter(i => i.claimedBy).length;
+    const question = noSpoilers ? 'Clear every wish someone is getting off the list?' : `Clear the ${plural(taken, 'wish')} people got off the list?`;
+    if (!await confirmBox(`${question} You can bring any of them back from Recently deleted.`, 'Clear them')) return;
+    adminDo(button, 'Clearing…', 'remove-taken', {}, () => toast("Cleared. They're in Recently deleted."));
+});
 
 // ---- Everything else ----
 

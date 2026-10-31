@@ -19,6 +19,7 @@
         <div class="top-actions">
             <button id="share" class="top-btn" type="button" title="Share this page">Share</button>
             <span id="who" class="who" hidden></span>
+            <button id="admin-btn" class="top-btn" type="button" hidden>⚙ Admin</button>
             <button id="signin" class="top-btn" type="button">🔒 Family sign-in</button>
         </div>
     </header>
@@ -129,6 +130,55 @@
                 <span class="spacer"></span>
                 <button type="button" class="btn" data-close>Cancel</button>
                 <button type="submit" class="btn primary">Save</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Admin tools (sign in with the name Admin) -->
+    <dialog id="admin-dialog" class="wide">
+        <form method="dialog" id="admin-form">
+            <h2>Admin</h2>
+            <p id="admin-loading" class="hint">Loading…</p>
+            <p id="admin-error" class="error" hidden></p>
+
+            <section class="admin-section">
+                <h3>Family passcode</h3>
+                <p class="hint">Everyone uses it to sign in. After you change it, anyone using the old one is asked for the new one the next time they change something, so let them know.</p>
+                <p class="current">Now: <code id="cur-pass">••••••</code> <button id="show-pass" type="button" class="link-btn">Show</button></p>
+                <span class="row">
+                    <input id="new-pass" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="100" placeholder="New family passcode">
+                    <button id="set-pass" type="button" class="btn primary">Change</button>
+                </span>
+            </section>
+
+            <section class="admin-section">
+                <h3>Admin passcode</h3>
+                <p id="admin-pass-status" class="hint"></p>
+                <span class="row">
+                    <input id="new-admin-pass" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="100" placeholder="Admin passcode">
+                    <button id="set-admin-pass" type="button" class="btn primary">Set</button>
+                </span>
+            </section>
+
+            <section class="admin-section">
+                <h3>Recently deleted</h3>
+                <div id="deleted-list" class="admin-list"></div>
+            </section>
+
+            <section class="admin-section">
+                <h3>After the occasion</h3>
+                <p class="hint">Once the gifts are given, clear the wishes people got off the list. They go to Recently deleted, so you can bring any back.</p>
+                <p><button id="remove-taken" type="button" class="btn"></button></p>
+            </section>
+
+            <section class="admin-section">
+                <h3>Recent activity</h3>
+                <p id="log-note" class="hint"></p>
+                <div id="log-list" class="admin-list log"></div>
+            </section>
+
+            <div class="dialog-actions">
+                <button type="button" class="btn" data-close>Close</button>
             </div>
         </form>
     </dialog>

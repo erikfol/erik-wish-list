@@ -8,6 +8,19 @@ Each wish has a picture, a link to the product, the price, the store, how much E
 - **Changing anything needs the family passcode**: adding, editing or deleting wishes, and marking what you're getting. The passcode is checked by Google, not by the web page, so it can't be found by looking at the page's code. Each person signs in once per device with the passcode and their name.
 - **Fill in from link**: paste a product link and the page tries to fill in the name, picture and price from the store's page. Some stores (Amazon often) block this, so you fill those in by hand. For the picture, right-click (or press and hold) the product's photo, choose "Copy image address", and paste it into the Picture box.
 - **No-spoiler mode** (link at the bottom of the page) hides what people are getting, on that device only. It's meant for Erik.
+- **Admin**: sign in with the name **Admin** and a **⚙ Admin** button appears at the top (see below).
+
+## Admin
+
+Sign in with the name `Admin`. Until you set an admin passcode, Admin uses the family passcode, which means anyone who knows the family passcode can sign in as Admin. Setting an admin passcode fixes that. The ⚙ Admin panel has:
+
+- **Family passcode**: see the current one, or change it. Anyone using the old one is asked for the new one the next time they try to change something.
+- **Admin passcode**: set it (or change it) so only you can sign in as Admin. After that, the family passcode no longer works for the name Admin.
+- **Recently deleted**: every deleted wish goes here (the `Deleted` tab of the sheet). **Restore** puts it back on the list exactly as it was, including who's getting it.
+- **After the occasion**: clears the wishes people got off the list in one go. They go to Recently deleted.
+- **Recent activity**: who added, changed, deleted, restored or claimed what, and when (the `Log` tab, the newest 500). With no-spoiler mode on, claims are left out.
+
+If you're ever locked out, open the sheet's Apps Script → Project Settings → Script Properties: `PASSCODE` is the family passcode and `ADMIN_PASSCODE` the admin one. Delete `ADMIN_PASSCODE` to go back to signing in as Admin with the family passcode.
 
 ## How it works
 
@@ -35,7 +48,7 @@ Until `SCRIPT_URL` in `docs/js/config.js` is filled in, the page runs as a **dem
 
 ## Day to day
 
-- **Change the passcode** (for example, if it got passed around too far): edit `PASSCODE` in the script's Project Settings. It takes effect right away. Anyone still signed in with the old one is asked for the new one the next time they change something.
+- **Change the passcode** (for example, if it got passed around too far): sign in as Admin and use ⚙ Admin → Family passcode. It takes effect right away.
 - **Edit in the sheet:** the `Items` tab is the list, and the page shows any changes made there. `priority` is 3 (Top pick), 2 (Would love) or 1 (Nice to have). Keep the header row; the columns can be in any order.
 - **After changing `Code.gs`:** paste it into Apps Script again, then **Deploy → Manage deployments → ✎ (Edit) → Version: New version → Deploy**. This keeps the same URL.
 - **Good to know:** everything on the list is public to anyone with the link, including the names people sign in with, which are kept with what they're getting. Use first names or initials.

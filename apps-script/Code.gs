@@ -3,13 +3,23 @@
 // script property, and deploy it as a web app (Execute as: Me, Who has access: Anyone).
 //
 // Anyone can read the list (GET). Every change (POST) needs the family passcode, which
-// lives only in this script's properties, never in the web page.
+// lives only in this script's properties, never in the web page. Signing in with the name
+// Admin gives the Admin tools; Admin uses ADMIN_PASSCODE once one is set, and the family
+// passcode until then.
 
-const SHEET_NAME = 'Items';
 const COLUMNS = ['id', 'name', 'url', 'image', 'price', 'store', 'priority', 'details',
                  'addedBy', 'added', 'claimedBy', 'claimed'];
+// The tabs of the sheet and their columns. Each is made the first time it's needed.
+const SHEETS = {
+  Items: COLUMNS,
+  Deleted: COLUMNS.concat(['deletedBy', 'deleted']),
+  Log: ['when', 'who', 'action', 'wish'],
+};
+const KEEP = { Deleted: 200, Log: 500 }; // the oldest rows past these are dropped
 // Longest text each field may hold.
-const LIMITS = { name: 200, url: 2000, image: 2000, price: 40, store: 80, details: 1000, who: 60 };
+const LIMITS = { name: 200, url: 2000, image: 2000, price: 40, store: 80, details: 1000, who: 60, passcode: 100 };
+const ADMIN_NAME = 'admin';
+const ADMIN_ACTIONS = ['admin-info', 'set-passcode', 'set-admin-passcode', 'restore', 'remove-taken'];
 
 function doGet() {
   return json({ items: readItems() });
@@ -22,31 +32,64 @@ function doPost(e) {
   } catch (err) {
     return json({ error: 'bad-request' });
   }
-  const passcode = PropertiesService.getScriptProperties().getProperty('PASSCODE');
-  if (!passcode) return json({ error: 'no-passcode-set' });
-  // Spaces around it and capital letters don't matter, so it's easy to type on a phone.
-  if (String(req.passcode || '').trim().toLowerCase() !== passcode.trim().toLowerCase()) {
+  const props = PropertiesService.getScriptProperties();
+  if (!props.getProperty('PASSCODE')) return json({ error: 'no-passcode-set' });
+  const role = roleOf(req, props);
+  if (!role) {
     Utilities.sleep(1500); // makes guessing slow
     return json({ error: 'wrong-passcode' });
   }
-  if (req.action === 'check') return json({ ok: true });
+  if (req.action === 'check') return json({ ok: true, isAdmin: role === 'admin' });
   if (req.action === 'preview') return json({ preview: previewLink(req.url) });
+  const adminAction = ADMIN_ACTIONS.indexOf(req.action) >= 0;
+  if (adminAction && role !== 'admin') return json({ error: 'not-admin' });
+  if (req.action === 'admin-info') return json({ ok: true, adminInfo: adminInfo(props) });
 
+  const who = clean(req.who, LIMITS.who) || 'Someone';
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
     switch (req.action) {
-      case 'save': saveItem(req.item || {}, req.who); break;
-      case 'delete': deleteItem(req.id); break;
-      case 'claim': {
-        const taken = claimItem(req.id, req.who);
-        if (taken) return json({ error: 'already-claimed', claimedBy: taken, items: readItems() });
+      case 'save': {
+        const saved = saveItem(req.item || {}, who);
+        log(who, saved.added ? 'added' : 'changed', saved.name);
         break;
       }
-      case 'unclaim': unclaimItem(req.id); break;
+      case 'delete': {
+        const name = deleteItem(req.id, who);
+        if (name) log(who, 'deleted', name);
+        break;
+      }
+      case 'claim': {
+        const claimed = claimItem(req.id, who);
+        if (claimed.takenBy) return json({ error: 'already-claimed', claimedBy: claimed.takenBy, items: readItems() });
+        log(who, 'claimed', claimed.name);
+        break;
+      }
+      case 'unclaim': {
+        const name = unclaimItem(req.id);
+        if (name) log(who, 'unclaimed', name);
+        break;
+      }
+      case 'restore': {
+        const name = restoreItem(req.id);
+        if (name) log(who, 'restored', name);
+        break;
+      }
+      case 'remove-taken': log(who, 'removed-taken', String(removeTaken(who))); break;
+      case 'set-passcode':
+        setPasscode(props, 'PASSCODE', req.newPasscode, props.getProperty('ADMIN_PASSCODE'));
+        log(who, 'family-passcode', '');
+        break;
+      case 'set-admin-passcode':
+        setPasscode(props, 'ADMIN_PASSCODE', req.newPasscode, props.getProperty('PASSCODE'));
+        log(who, 'admin-passcode', '');
+        break;
       default: return json({ error: 'bad-request' });
     }
-    return json({ ok: true, items: readItems() });
+    const out = { ok: true, items: readItems() };
+    if (adminAction) out.adminInfo = adminInfo(props);
+    return json(out);
   } catch (err) {
     return json({ error: 'failed', message: String(err.message || err) });
   } finally {
@@ -58,81 +101,130 @@ function json(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
+// ---- Who's asking ----
+
+// Spaces around a passcode and capital letters don't matter, so it's easy to type on a phone.
+function norm(s) {
+  return String(s == null ? '' : s).trim().toLowerCase();
+}
+
+// 'admin' for the name Admin with the admin passcode (the family passcode until an admin
+// passcode is set), 'family' for anyone else with the family passcode, or '' for neither.
+function roleOf(req, props) {
+  const family = props.getProperty('PASSCODE');
+  const admin = props.getProperty('ADMIN_PASSCODE');
+  const given = norm(req.passcode);
+  if (norm(req.who) === ADMIN_NAME) return given === norm(admin || family) ? 'admin' : '';
+  return given === norm(family) ? 'family' : '';
+}
+
+function setPasscode(props, key, value, other) {
+  const passcode = String(value == null ? '' : value).trim();
+  if (passcode.length < 6) throw new Error('Use at least 6 characters. Three short words work well.');
+  if (passcode.length > LIMITS.passcode) throw new Error('That passcode is too long.');
+  if (other && norm(passcode) === norm(other)) throw new Error('The family and admin passcodes need to be different.');
+  props.setProperty(key, passcode);
+}
+
+// What the Admin tools show: the newest activity and deleted wishes first.
+function adminInfo(props) {
+  return {
+    familyPasscode: props.getProperty('PASSCODE'),
+    hasAdminPasscode: !!props.getProperty('ADMIN_PASSCODE'),
+    deleted: records(table('Deleted')).reverse().slice(0, 50).map(strip),
+    log: records(table('Log')).reverse().slice(0, 150).map(strip),
+  };
+}
+
+function strip(record) {
+  delete record.row;
+  return record;
+}
+
 // ---- The sheet ----
 
-function getSheet() {
+// One tab of the sheet and where its columns are. Columns are found by their header, so
+// they can be moved around in the sheet.
+function table(name) {
+  const columns = SHEETS[name];
   const book = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = book.getSheetByName(SHEET_NAME);
+  let sheet = book.getSheetByName(name);
   if (!sheet) {
-    sheet = book.insertSheet(SHEET_NAME);
-    sheet.getRange(1, 1, 1, COLUMNS.length).setValues([COLUMNS]).setFontWeight('bold');
+    sheet = book.insertSheet(name);
+    sheet.getRange(1, 1, 1, columns.length).setValues([columns]).setFontWeight('bold');
     sheet.setFrozenRows(1);
     // Plain text, so prices and dates stay exactly as written.
-    sheet.getRange(1, 1, sheet.getMaxRows(), COLUMNS.length).setNumberFormat('@');
+    sheet.getRange(1, 1, sheet.getMaxRows(), columns.length).setNumberFormat('@');
   }
-  return sheet;
-}
-
-// Column positions by header name, so columns can be moved around in the sheet.
-function headerIndex(sheet) {
   const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
   const index = {};
-  COLUMNS.forEach(c => {
+  columns.forEach(c => {
     const i = header.indexOf(c);
-    if (i < 0) throw new Error('The sheet is missing the "' + c + '" column');
+    if (i < 0) throw new Error('The ' + name + ' sheet is missing the "' + c + '" column');
     index[c] = i;
   });
-  return index;
+  return { name: name, sheet: sheet, index: index, columns: columns };
 }
 
-function readRows(sheet) {
-  const last = sheet.getLastRow();
+// Every row below the header as { row: its row number, column: text, ... }.
+function records(t) {
+  const last = t.sheet.getLastRow();
   if (last < 2) return [];
-  return sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).getValues();
+  return t.sheet.getRange(2, 1, last - 1, t.sheet.getLastColumn()).getValues().map((values, i) => {
+    const record = { row: i + 2 };
+    t.columns.forEach(c => {
+      const v = values[t.index[c]];
+      record[c] = v instanceof Date ? v.toISOString() : String(v);
+    });
+    return record;
+  });
+}
+
+function findRecord(t, id) {
+  if (!id) return null;
+  return records(t).filter(r => r.id === String(id))[0] || null;
+}
+
+// Never let a value become a formula.
+function safe(value) {
+  const s = value == null ? '' : String(value);
+  return s.charAt(0) === '=' ? "'" + s : s;
+}
+
+function writeCells(t, rowNumber, values) {
+  Object.keys(values).forEach(c => t.sheet.getRange(rowNumber, t.index[c] + 1).setValue(safe(values[c])));
+}
+
+function appendRecord(t, values) {
+  const row = new Array(t.sheet.getLastColumn()).fill('');
+  t.columns.forEach(c => { row[t.index[c]] = safe(values[c]); });
+  t.sheet.appendRow(row);
+  const extra = t.sheet.getLastRow() - 1 - (KEEP[t.name] || Infinity);
+  if (extra > 0) t.sheet.deleteRows(2, extra);
+}
+
+function log(who, action, wish) {
+  appendRecord(table('Log'), { when: new Date().toISOString(), who: who, action: action, wish: wish });
 }
 
 function readItems() {
-  const sheet = getSheet();
-  const index = headerIndex(sheet);
-  const rows = readRows(sheet);
-  // A wish typed straight into the sheet gets an id the first time it's read.
-  rows.forEach((row, i) => {
-    if (row[index.id] === '' && row[index.name] !== '') {
-      row[index.id] = Utilities.getUuid();
-      sheet.getRange(i + 2, index.id + 1).setValue(row[index.id]);
-    }
-  });
-  return rows
-    .filter(row => row[index.name] !== '')
-    .map(row => {
-      const item = {};
-      COLUMNS.forEach(c => {
-        const v = row[index[c]];
-        item[c] = v instanceof Date ? v.toISOString() : String(v);
-      });
-      return item;
+  const t = table('Items');
+  return records(t)
+    .filter(r => r.name !== '')
+    .map(r => {
+      // A wish typed straight into the sheet gets an id the first time it's read.
+      if (!r.id) {
+        r.id = Utilities.getUuid();
+        writeCells(t, r.row, { id: r.id });
+      }
+      return strip(r);
     });
-}
-
-// The sheet row number (2 and up) of an item, or 0.
-function findRow(sheet, index, id) {
-  if (!id) return 0;
-  const rows = readRows(sheet);
-  for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][index.id]) === String(id)) return i + 2;
-  }
-  return 0;
-}
-
-function writeCells(sheet, index, rowNumber, values) {
-  Object.keys(values).forEach(c => sheet.getRange(rowNumber, index[c] + 1).setValue(values[c]));
 }
 
 // ---- Changes ----
 
 function clean(value, limit) {
-  const s = String(value == null ? '' : value).trim().slice(0, limit);
-  return /^[=+\-@]/.test(s) ? "'" + s : s; // never let a value become a formula
+  return String(value == null ? '' : value).trim().slice(0, limit);
 }
 
 function cleanLink(value) {
@@ -140,6 +232,7 @@ function cleanLink(value) {
   return /^https?:\/\//i.test(s) ? s.slice(0, LIMITS.url) : '';
 }
 
+// Returns { name, added: true for a new wish }.
 function saveItem(item, who) {
   const name = clean(item.name, LIMITS.name);
   if (!name) throw new Error('A wish needs a name');
@@ -152,48 +245,73 @@ function saveItem(item, who) {
     priority: ['1', '2', '3'].indexOf(String(item.priority)) >= 0 ? String(item.priority) : '2',
     details: clean(item.details, LIMITS.details),
   };
-  const sheet = getSheet();
-  const index = headerIndex(sheet);
-  const rowNumber = findRow(sheet, index, item.id);
-  if (rowNumber) {
-    writeCells(sheet, index, rowNumber, values); // leaves who claimed it alone
-    return;
+  const t = table('Items');
+  const found = findRecord(t, item.id);
+  if (found) {
+    writeCells(t, found.row, values); // leaves who claimed it alone
+    return { name: name, added: false };
   }
   if (item.id) throw new Error('That wish was removed');
   values.id = Utilities.getUuid();
-  values.addedBy = clean(who, LIMITS.who);
+  values.addedBy = who;
   values.added = new Date().toISOString();
-  values.claimedBy = '';
-  values.claimed = '';
-  const row = new Array(sheet.getLastColumn()).fill('');
-  COLUMNS.forEach(c => { row[index[c]] = values[c]; });
-  sheet.appendRow(row);
+  appendRecord(t, values);
+  return { name: name, added: true };
 }
 
-function deleteItem(id) {
-  const sheet = getSheet();
-  const rowNumber = findRow(sheet, headerIndex(sheet), id);
-  if (rowNumber) sheet.deleteRow(rowNumber);
+// Moves wishes to the Deleted tab, where Admin can bring them back.
+function moveToDeleted(t, found, who) {
+  const deleted = table('Deleted');
+  const now = new Date().toISOString();
+  found.forEach(r => appendRecord(deleted, Object.assign({}, r, { deletedBy: who, deleted: now })));
+  found.map(r => r.row).sort((a, b) => b - a).forEach(row => t.sheet.deleteRow(row));
 }
 
-// Returns who already has it if someone else claimed it first, else claims it.
+// Returns the deleted wish's name, or '' if it was already gone.
+function deleteItem(id, who) {
+  const t = table('Items');
+  const found = findRecord(t, id);
+  if (!found) return '';
+  moveToDeleted(t, [found], who);
+  return found.name;
+}
+
+// Returns how many wishes it removed.
+function removeTaken(who) {
+  const t = table('Items');
+  const taken = records(t).filter(r => r.name !== '' && r.claimedBy !== '');
+  moveToDeleted(t, taken, who);
+  return taken.length;
+}
+
+// Returns the wish's name, or '' if it isn't in Deleted.
+function restoreItem(id) {
+  const deleted = table('Deleted');
+  const found = findRecord(deleted, id);
+  if (!found) return '';
+  const items = table('Items');
+  if (!findRecord(items, id)) appendRecord(items, found);
+  deleted.sheet.deleteRow(found.row);
+  return found.name;
+}
+
+// Returns { name } once claimed, or { takenBy } if someone else claimed it first.
 function claimItem(id, who) {
-  const name = clean(who, LIMITS.who) || 'Someone';
-  const sheet = getSheet();
-  const index = headerIndex(sheet);
-  const rowNumber = findRow(sheet, index, id);
-  if (!rowNumber) throw new Error('That wish was removed');
-  const current = String(sheet.getRange(rowNumber, index.claimedBy + 1).getValue());
-  if (current && current !== name) return current;
-  writeCells(sheet, index, rowNumber, { claimedBy: name, claimed: new Date().toISOString() });
-  return '';
+  const t = table('Items');
+  const found = findRecord(t, id);
+  if (!found) throw new Error('That wish was removed');
+  if (found.claimedBy && found.claimedBy !== who) return { takenBy: found.claimedBy };
+  writeCells(t, found.row, { claimedBy: who, claimed: new Date().toISOString() });
+  return { name: found.name };
 }
 
+// Returns the wish's name, or '' if it's gone.
 function unclaimItem(id) {
-  const sheet = getSheet();
-  const index = headerIndex(sheet);
-  const rowNumber = findRow(sheet, index, id);
-  if (rowNumber) writeCells(sheet, index, rowNumber, { claimedBy: '', claimed: '' });
+  const t = table('Items');
+  const found = findRecord(t, id);
+  if (!found) return '';
+  writeCells(t, found.row, { claimedBy: '', claimed: '' });
+  return found.name;
 }
 
 // ---- Fill in from a link ----
