@@ -89,7 +89,7 @@ const demo = {
         const item = list.find(i => i.id === (req.id || req.item?.id));
         const now = new Date().toISOString();
         switch (req.action) {
-            case 'check': return { ok: true };
+            case 'check': return { ok: true, isAdmin: String(req.who).toLowerCase() === 'admin' };
             case 'preview': return { preview: {} };
             case 'save': {
                 const { name, url, image, price, store, priority, details } = req.item;
@@ -193,8 +193,7 @@ function handleError(err) {
         signOut();
         openSignIn(null, `That passcode didn't work. It may have changed, so ask ${OWNER} for the new one.`);
     } else if (err.code === 'not-admin') {
-        signOut();
-        openSignIn(null, 'Sign in with the name Admin to use the Admin tools.');
+        toast('Only Admin can add, change or delete wishes.');
     } else if (err.code === 'already-claimed') {
         toast(`${err.claimedBy} is already getting that one.`);
     } else if (err.code === 'no-passcode-set') {
@@ -241,7 +240,7 @@ function render() {
     $('signin').textContent = signedIn ? 'Sign out' : '🔒 Family sign-in';
     $('who').hidden = !signedIn;
     $('who').textContent = `Hi, ${session.name}`;
-    $('add').hidden = !signedIn;
+    $('add').hidden = !(signedIn && session.admin);
     $('admin-btn').hidden = !(signedIn && session.admin);
     $('show-wrap').hidden = noSpoilers;
 
@@ -266,7 +265,7 @@ function emptyState() {
     return h('div', { class: 'empty' },
         h('div', { class: 'big' }, '🎄'),
         h('p', {}, 'No wishes on the list yet.'),
-        h('p', {}, session.passcode ? 'Tap “＋ Add a wish” to start it.' : 'Check back soon!'));
+        h('p', {}, session.passcode && session.admin ? 'Tap “＋ Add a wish” to start it.' : 'Check back soon!'));
 }
 
 function noPic() {
@@ -314,7 +313,7 @@ function card(item) {
             h('div', { class: 'actions' },
                 url && h('a', { class: 'btn', href: url, target: '_blank', rel: 'noopener noreferrer' }, 'View it ↗'),
                 claimButton,
-                signedIn && h('button', { class: 'btn', type: 'button', title: 'Change or delete this wish', onclick: () => openItem(item) }, '✎ Edit'))));
+                signedIn && session.admin && h('button', { class: 'btn', type: 'button', title: 'Change or delete this wish', onclick: () => openItem(item) }, '✎ Edit'))));
 }
 
 // ---- Claiming ----
@@ -481,7 +480,7 @@ async function fillFromLink(auto) {
             : found.length ? 'Nothing new to fill in (only empty boxes get filled).'
             : "That store didn't share its details, so fill them in by hand.";
     } catch (err) {
-        if (err.code === 'wrong-passcode') {
+        if (err.code === 'wrong-passcode' || err.code === 'not-admin') {
             $('item-dialog').close();
             return handleError(err);
         }
@@ -509,7 +508,7 @@ $('item-form').addEventListener('submit', async e => {
     try {
         await working(e.submitter || $('item-form').querySelector('[type=submit]'), 'Saving…', () => send('save', { item }));
     } catch (err) {
-        if (err.code === 'wrong-passcode') {
+        if (err.code === 'wrong-passcode' || err.code === 'not-admin') {
             $('item-dialog').close();
             return handleError(err);
         }
@@ -525,7 +524,7 @@ $('delete').addEventListener('click', async () => {
     try {
         await working($('delete'), 'Deleting…', () => send('delete', { id: editing.id }));
     } catch (err) {
-        if (err.code === 'wrong-passcode') {
+        if (err.code === 'wrong-passcode' || err.code === 'not-admin') {
             $('item-dialog').close();
             return handleError(err);
         }

@@ -3,8 +3,9 @@
 // script property, and deploy it as a web app (Execute as: Me, Who has access: Anyone).
 //
 // Anyone can read the list (GET). Every change (POST) needs the family passcode, which
-// lives only in this script's properties, never in the web page. Signing in with the name
-// Admin gives the Admin tools; Admin uses ADMIN_PASSCODE once one is set, and the family
+// lives only in this script's properties, never in the web page. With it, family members
+// mark what they're getting. Adding, changing and deleting wishes, and the Admin tools, are
+// for the name Admin only: Admin uses ADMIN_PASSCODE once one is set, and the family
 // passcode until then.
 
 const COLUMNS = ['id', 'name', 'url', 'image', 'price', 'store', 'priority', 'details',
@@ -19,7 +20,9 @@ const KEEP = { Deleted: 200, Log: 500 }; // the oldest rows past these are dropp
 // Longest text each field may hold.
 const LIMITS = { name: 200, url: 2000, image: 2000, price: 40, store: 80, details: 1000, who: 60, passcode: 100 };
 const ADMIN_NAME = 'admin';
-const ADMIN_ACTIONS = ['admin-info', 'set-passcode', 'set-admin-passcode', 'restore', 'remove-taken'];
+// What only Admin may do. The Admin panel's own actions also answer with what the panel shows.
+const PANEL_ACTIONS = ['admin-info', 'set-passcode', 'set-admin-passcode', 'restore', 'remove-taken'];
+const ADMIN_ACTIONS = ['save', 'delete', 'preview'].concat(PANEL_ACTIONS);
 
 function doGet() {
   return json({ items: readItems() });
@@ -40,9 +43,8 @@ function doPost(e) {
     return json({ error: 'wrong-passcode' });
   }
   if (req.action === 'check') return json({ ok: true, isAdmin: role === 'admin' });
+  if (ADMIN_ACTIONS.indexOf(req.action) >= 0 && role !== 'admin') return json({ error: 'not-admin' });
   if (req.action === 'preview') return json({ preview: previewLink(req.url) });
-  const adminAction = ADMIN_ACTIONS.indexOf(req.action) >= 0;
-  if (adminAction && role !== 'admin') return json({ error: 'not-admin' });
   if (req.action === 'admin-info') return json({ ok: true, adminInfo: adminInfo(props) });
 
   const who = clean(req.who, LIMITS.who) || 'Someone';
@@ -88,7 +90,7 @@ function doPost(e) {
       default: return json({ error: 'bad-request' });
     }
     const out = { ok: true, items: readItems() };
-    if (adminAction) out.adminInfo = adminInfo(props);
+    if (PANEL_ACTIONS.indexOf(req.action) >= 0) out.adminInfo = adminInfo(props);
     return json(out);
   } catch (err) {
     return json({ error: 'failed', message: String(err.message || err) });
