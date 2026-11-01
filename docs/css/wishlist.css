@@ -335,3 +335,14 @@ dialog.wide { width: min(640px, calc(100% - 32px)); }
     .row { flex-direction: column; }
     dialog { padding: 18px 16px; }
 }
+
+/* ---- Categories ---- */
+.cat {
+    font-size: 0.85em;
+    padding: 1px 8px;
+    border-radius: 10px;
+    border: 1px solid #d9cfbd;
+    background: #fffdf8;
+    color: #5c5446;
+}
+.admin-row .rename { flex: 1; min-width: 0; }

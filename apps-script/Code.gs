@@ -8,20 +8,24 @@
 // for the name Admin only: Admin uses ADMIN_PASSCODE once one is set, and the family
 // passcode until then.
 
-const COLUMNS = ['id', 'name', 'url', 'image', 'price', 'store', 'priority', 'details',
+const COLUMNS = ['id', 'name', 'url', 'image', 'price', 'store', 'priority', 'category', 'details',
                  'addedBy', 'added', 'claimedBy', 'claimed'];
 // The tabs of the sheet and their columns. Each is made the first time it's needed.
 const SHEETS = {
   Items: COLUMNS,
   Deleted: COLUMNS.concat(['deletedBy', 'deleted']),
   Log: ['when', 'who', 'action', 'wish'],
+  Categories: ['name'],
 };
 const KEEP = { Deleted: 200, Log: 500 }; // the oldest rows past these are dropped
 // Longest text each field may hold.
-const LIMITS = { name: 200, url: 2000, image: 2000, price: 40, store: 80, details: 1000, who: 60, passcode: 100 };
+const LIMITS = { name: 200, url: 2000, image: 2000, price: 40, store: 80, category: 40, details: 1000, who: 60, passcode: 100 };
+// What the Categories tab starts with. Admin adds, renames and deletes them from there on.
+const DEFAULT_CATEGORIES = ['Car', 'Tech', 'Tool'];
 const ADMIN_NAME = 'admin';
 // What only Admin may do. The Admin panel's own actions also answer with what the panel shows.
-const PANEL_ACTIONS = ['admin-info', 'set-passcode', 'set-admin-passcode', 'restore', 'remove-taken'];
+const PANEL_ACTIONS = ['admin-info', 'set-passcode', 'set-admin-passcode', 'restore', 'remove-taken',
+                       'add-category', 'rename-category', 'delete-category'];
 const ADMIN_ACTIONS = ['save', 'delete', 'preview'].concat(PANEL_ACTIONS);
 
 // The list is only for people who are signed in, so there's nothing to see here.
@@ -43,8 +47,8 @@ function doPost(e) {
     Utilities.sleep(1500); // makes guessing slow
     return json({ error: 'wrong-passcode' });
   }
-  if (req.action === 'check') return json({ ok: true, isAdmin: role === 'admin', items: readItems() });
-  if (req.action === 'list') return json({ ok: true, items: readItems() });
+  if (req.action === 'check') return json(Object.assign({ ok: true, isAdmin: role === 'admin' }, theList()));
+  if (req.action === 'list') return json(Object.assign({ ok: true }, theList()));
   if (ADMIN_ACTIONS.indexOf(req.action) >= 0 && role !== 'admin') return json({ error: 'not-admin' });
   if (req.action === 'preview') return json({ preview: previewLink(req.url) });
   if (req.action === 'admin-info') return json({ ok: true, adminInfo: adminInfo(props) });
@@ -66,7 +70,7 @@ function doPost(e) {
       }
       case 'claim': {
         const claimed = claimItem(req.id, who);
-        if (claimed.takenBy) return json({ error: 'already-claimed', claimedBy: claimed.takenBy, items: readItems() });
+        if (claimed.takenBy) return json(Object.assign({ error: 'already-claimed', claimedBy: claimed.takenBy }, theList()));
         log(who, 'claimed', claimed.name);
         break;
       }
@@ -81,6 +85,13 @@ function doPost(e) {
         break;
       }
       case 'remove-taken': log(who, 'removed-taken', String(removeTaken(who))); break;
+      case 'add-category': log(who, 'category-added', addCategory(req.name)); break;
+      case 'rename-category': log(who, 'category-renamed', renameCategory(req.from, req.to)); break;
+      case 'delete-category': {
+        const name = deleteCategory(req.name);
+        if (name) log(who, 'category-deleted', name);
+        break;
+      }
       case 'set-passcode':
         setPasscode(props, 'PASSCODE', req.newPasscode, props.getProperty('ADMIN_PASSCODE'));
         log(who, 'family-passcode', '');
@@ -91,7 +102,7 @@ function doPost(e) {
         break;
       default: return json({ error: 'bad-request' });
     }
-    const out = { ok: true, items: readItems() };
+    const out = Object.assign({ ok: true }, theList());
     if (PANEL_ACTIONS.indexOf(req.action) >= 0) out.adminInfo = adminInfo(props);
     return json(out);
   } catch (err) {
@@ -99,6 +110,11 @@ function doPost(e) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// What a signed-in page shows: the wishes and the categories they can be in.
+function theList() {
+  return { items: readItems(), categories: readCategories() };
 }
 
 function json(obj) {
@@ -153,7 +169,8 @@ function table(name) {
   const columns = SHEETS[name];
   const book = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = book.getSheetByName(name);
-  if (!sheet) {
+  const created = !sheet;
+  if (created) {
     sheet = book.insertSheet(name);
     sheet.getRange(1, 1, 1, columns.length).setValues([columns]).setFontWeight('bold');
     sheet.setFrozenRows(1);
@@ -163,11 +180,17 @@ function table(name) {
   const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
   const index = {};
   columns.forEach(c => {
-    const i = header.indexOf(c);
-    if (i < 0) throw new Error('The ' + name + ' sheet is missing the "' + c + '" column');
+    let i = header.indexOf(c);
+    if (i < 0) {
+      // A column this script added after the tab was made (like category): add it at the end.
+      i = header.length;
+      sheet.getRange(1, i + 1).setValue(c).setFontWeight('bold');
+      sheet.getRange(1, i + 1, sheet.getMaxRows(), 1).setNumberFormat('@');
+      header.push(c);
+    }
     index[c] = i;
   });
-  return { name: name, sheet: sheet, index: index, columns: columns };
+  return { name: name, sheet: sheet, index: index, columns: columns, created: created };
 }
 
 // Every row below the header as { row: its row number, column: text, ... }.
@@ -247,8 +270,10 @@ function saveItem(item, who) {
     price: clean(item.price, LIMITS.price),
     store: clean(item.store, LIMITS.store),
     priority: ['1', '2', '3'].indexOf(String(item.priority)) >= 0 ? String(item.priority) : '2',
+    category: clean(item.category, LIMITS.category),
     details: clean(item.details, LIMITS.details),
   };
+  if (readCategories().indexOf(values.category) < 0) values.category = '';
   const t = table('Items');
   const found = findRecord(t, item.id);
   if (found) {
@@ -316,6 +341,65 @@ function unclaimItem(id) {
   if (!found) return '';
   writeCells(t, found.row, { claimedBy: '', claimed: '' });
   return found.name;
+}
+
+// ---- Categories ----
+
+// The category names, A to Z. The Categories tab starts with DEFAULT_CATEGORIES.
+function readCategories() {
+  const t = table('Categories');
+  if (t.created) DEFAULT_CATEGORIES.forEach(name => appendRecord(t, { name: name }));
+  return records(t).map(r => r.name).filter(n => n !== '').sort((a, b) => a.localeCompare(b));
+}
+
+function categoryName(value) {
+  const name = clean(value, LIMITS.category).replace(/\s+/g, ' ');
+  if (!name) throw new Error('A category needs a name.');
+  if (name === '*' || norm(name) === 'no category') throw new Error('Pick a different name for the category.');
+  return name;
+}
+
+function findCategory(t, name) {
+  return records(t).filter(r => r.name !== '' && norm(r.name) === norm(name))[0] || null;
+}
+
+// Returns the new category's name.
+function addCategory(value) {
+  const name = categoryName(value);
+  const t = table('Categories');
+  if (findCategory(t, name)) throw new Error('There is already a category called "' + name + '".');
+  appendRecord(t, { name: name });
+  return name;
+}
+
+// Renames a category and the wishes in it (deleted ones too). Returns "old → new".
+function renameCategory(from, to) {
+  const t = table('Categories');
+  const found = findCategory(t, from);
+  if (!found) throw new Error('That category was removed.');
+  const name = categoryName(to);
+  const clash = findCategory(t, name);
+  if (clash && clash.row !== found.row) throw new Error('There is already a category called "' + name + '".');
+  writeCells(t, found.row, { name: name });
+  recategorize(found.name, name);
+  return found.name + ' → ' + name;
+}
+
+// Deletes a category; its wishes are left with no category. Returns its name, or '' if it was already gone.
+function deleteCategory(value) {
+  const t = table('Categories');
+  const found = findCategory(t, value);
+  if (!found) return '';
+  t.sheet.deleteRow(found.row);
+  recategorize(found.name, '');
+  return found.name;
+}
+
+function recategorize(from, to) {
+  ['Items', 'Deleted'].forEach(tab => {
+    const t = table(tab);
+    records(t).filter(r => r.category === from).forEach(r => writeCells(t, r.row, { category: to }));
+  });
 }
 
 // ---- Fill in from a link ----

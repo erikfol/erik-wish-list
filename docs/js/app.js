@@ -16,9 +16,11 @@ const saved = {
 };
 
 let items = [];
+let categories = []; // names, A to Z, from the sheet's Categories tab
 let loadedAt = 0;
 let session = { passcode: saved.get('wish-passcode') || '', name: saved.get('wish-name') || '', admin: saved.get('wish-admin') === '1' };
 let noSpoilers = saved.get('wish-no-spoilers') === '1';
+let categoryFilter = saved.get('wish-category') ?? '*'; // '*' everything, '' no category
 let editing = null;      // the wish open in the edit dialog ({} for a new one)
 let afterSignIn = null;  // what to do once signed in (claiming a wish starts there)
 
@@ -37,6 +39,7 @@ async function send(action, data = {}) {
     const body = { action, passcode: session.passcode, who: session.name, ...data };
     const out = DEMO ? demo.send(body) : await post(body);
     if (out.items) setItems(out.items);
+    if (out.categories) categories = out.categories;
     if (out.error) throw new ApiError(out.error, out);
     return out;
 }
@@ -54,7 +57,7 @@ async function post(body) {
 }
 
 function setItems(list) {
-    items = list.map(i => ({ ...i, priority: PRIORITY[i.priority] ? Number(i.priority) : 2 }));
+    items = list.map(i => ({ ...i, priority: PRIORITY[i.priority] ? Number(i.priority) : 2, category: i.category || '' }));
     loadedAt = Date.now();
 }
 
@@ -69,6 +72,8 @@ const SAMPLES = [
       details: 'Mysteries or history.', addedBy: 'Erik', added: '2026-10-28T12:00:00Z', claimedBy: '', claimed: '' },
 ];
 
+const DEMO_CATEGORIES = ['Car', 'Tech', 'Tool'];
+
 const demo = {
     items() {
         try {
@@ -82,12 +87,12 @@ const demo = {
         const item = list.find(i => i.id === (req.id || req.item?.id));
         const now = new Date().toISOString();
         switch (req.action) {
-            case 'check': return { ok: true, isAdmin: String(req.who).toLowerCase() === 'admin', items: list };
-            case 'list': return { ok: true, items: list };
+            case 'check': return { ok: true, isAdmin: String(req.who).toLowerCase() === 'admin', items: list, categories: DEMO_CATEGORIES };
+            case 'list': return { ok: true, items: list, categories: DEMO_CATEGORIES };
             case 'preview': return { preview: {} };
             case 'save': {
-                const { name, url, image, price, store, priority, details } = req.item;
-                const values = { name, url, image, price, store, priority, details };
+                const { name, url, image, price, store, priority, category, details } = req.item;
+                const values = { name, url, image, price, store, priority, category, details };
                 if (item) Object.assign(item, values);
                 else if (req.item.id) return { error: 'failed', message: 'That wish was removed' };
                 else list.push({ ...values, id: String(Date.now()), addedBy: req.who, added: now, claimedBy: '', claimed: '' });
@@ -102,7 +107,7 @@ const demo = {
             case 'unclaim': if (item) Object.assign(item, { claimedBy: '', claimed: '' }); break;
         }
         saved.set('wish-demo-items', JSON.stringify(list));
-        return { ok: true, items: list };
+        return { ok: true, items: list, categories: DEMO_CATEGORIES };
     },
 };
 
@@ -225,6 +230,7 @@ function visibleItems() {
     }[$('sort').value];
     return items
         .filter(i => show === 'all' || (show === 'open') === !i.claimedBy)
+        .filter(i => categoryFilter === '*' || i.category === categoryFilter)
         // What's still available comes first, unless that would give away what's taken.
         .sort((a, b) => (noSpoilers ? 0 : !!a.claimedBy - !!b.claimedBy) || order(a, b));
 }
@@ -253,8 +259,25 @@ function render() {
     $('spoiler-text').textContent = noSpoilers ? '🙈 No-spoiler mode is on for this device. ' : `${OWNER}? `;
     $('spoilers').textContent = noSpoilers ? 'Show what people are getting' : "Turn on no-spoiler mode so you can't see what people are getting";
 
+    fillCategoryChoices();
     const list = signedIn ? visibleItems() : [];
     $('list').replaceChildren(...(list.length ? list.map(card) : signedIn && loadedAt ? [emptyState()] : []));
+}
+
+// The Category filter: everything, each category, and no category, with how many wishes each has.
+function fillCategoryChoices() {
+    const count = name => items.filter(i => i.category === name).length;
+    const choices = [['*', 'All categories'], ...categories.map(c => [c, `${c} (${count(c)})`]), ['', `No category (${count('')})`]];
+    if (loadedAt && !choices.some(([value]) => value === categoryFilter)) categoryFilter = '*'; // that category was deleted
+    $('category').replaceChildren(...choices.map(([value, label]) => h('option', { value }, label)));
+    $('category').value = categoryFilter;
+}
+
+// The add/edit form's choices; a wish's category typed into the sheet by hand is kept as a choice.
+function fillItemCategories(current) {
+    const names = current && !categories.includes(current) ? [...categories, current] : categories;
+    $('f-category').replaceChildren(h('option', { value: '' }, 'No category'), ...names.map(c => h('option', { value: c }, c)));
+    $('f-category').value = current || '';
 }
 
 function emptyState() {
@@ -302,7 +325,10 @@ function card(item) {
         picBox,
         h('div', { class: 'card-body' },
             h('h3', {}, url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, item.name) : item.name),
-            h('div', { class: 'meta' }, h('span', { class: `badge p${item.priority}` }, PRIORITY[item.priority]), meta),
+            h('div', { class: 'meta' },
+                h('span', { class: `badge p${item.priority}` }, PRIORITY[item.priority]),
+                item.category && h('span', { class: 'cat' }, item.category),
+                meta),
             item.details && h('p', { class: 'details' }, item.details),
             note),
         h('div', { class: 'side' },
@@ -397,11 +423,12 @@ $('signin').addEventListener('click', () => {
 
 // ---- Adding and changing wishes ----
 
-const FIELDS = { name: 'f-name', url: 'f-url', image: 'f-image', price: 'f-price', store: 'f-store', priority: 'f-priority', details: 'f-details' };
+const FIELDS = { name: 'f-name', url: 'f-url', image: 'f-image', price: 'f-price', store: 'f-store', priority: 'f-priority', category: 'f-category', details: 'f-details' };
 
 function openItem(item) {
     editing = item || {};
     $('item-title').textContent = item ? 'Change this wish' : 'Add a wish';
+    fillItemCategories(editing.category);
     for (const [field, id] of Object.entries(FIELDS)) $(id).value = editing[field] ?? '';
     $('f-priority').value = String(editing.priority || 2);
     $('delete').hidden = !item;
@@ -550,6 +577,9 @@ const ACTIVITY = {
     'removed-taken': n => `cleared ${plural(Number(n), 'wish')} people got`,
     'family-passcode': () => 'changed the family passcode',
     'admin-passcode': () => 'set the admin passcode',
+    'category-added': c => `added the category “${c}”`,
+    'category-renamed': c => `renamed the category “${c.split(' → ')[0]}” to “${c.split(' → ').slice(1).join(' → ')}”`,
+    'category-deleted': c => `deleted the category “${c}”`,
 };
 const SPOILERS = ['claimed', 'unclaimed'];
 
@@ -563,6 +593,8 @@ function renderAdmin() {
         ? "Admin has its own passcode, so the family passcode isn't enough to sign in as Admin. Type a new one here to change it."
         : 'Right now Admin signs in with the family passcode, so anyone who knows it can sign in as Admin. Set an admin passcode that only you know.';
     $('set-admin-pass').textContent = info.hasAdminPasscode ? 'Change' : 'Set';
+
+    renderCategoryAdmin();
 
     $('deleted-list').replaceChildren(...(info.deleted.length ? info.deleted.map(d => h('div', { class: 'admin-row' },
         h('div', { class: 'what' }, d.name, h('div', { class: 'when' }, `Deleted ${dateTimeText(d.deleted)} by ${d.deletedBy || 'someone'}`)),
@@ -582,6 +614,57 @@ function renderAdmin() {
         : [h('div', { class: 'none' }, 'Nothing yet.')]));
 }
 
+let renaming = null; // the category being renamed in the Admin panel
+
+function renderCategoryAdmin() {
+    const count = name => items.filter(i => i.category === name).length;
+    const row = name => renaming === name
+        ? h('div', { class: 'admin-row' },
+            h('input', { type: 'text', class: 'rename', value: name, maxlength: '40', 'aria-label': `New name for ${name}`,
+                onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); e.target.parentNode.querySelector('.primary').click(); } } }),
+            h('button', { class: 'btn primary', type: 'button', onclick: e => {
+                const to = e.currentTarget.parentNode.querySelector('input').value.trim();
+                if (to === name) { renaming = null; return renderAdmin(); }
+                adminDo(e.currentTarget, 'Saving…', 'rename-category', { from: name, to }, () => {
+                    renaming = null;
+                    renderAdmin();
+                    toast(`Renamed to “${to}”.`);
+                });
+            } }, 'Save'),
+            h('button', { class: 'btn', type: 'button', onclick: () => { renaming = null; renderAdmin(); } }, 'Cancel'))
+        : h('div', { class: 'admin-row' },
+            h('div', { class: 'what' }, name, h('div', { class: 'when' }, plural(count(name), 'wish'))),
+            h('button', { class: 'btn', type: 'button', onclick: () => {
+                renaming = name;
+                renderAdmin();
+                document.querySelector('#category-list .rename').select();
+            } }, 'Rename'),
+            h('button', { class: 'btn danger', type: 'button', onclick: e => deleteCategory(name, e.currentTarget) }, 'Delete'));
+    $('category-list').replaceChildren(...(categories.length ? categories.map(row) : [h('div', { class: 'none' }, 'No categories yet.')]));
+}
+
+async function deleteCategory(name, button) {
+    const n = items.filter(i => i.category === name).length;
+    const question = `Delete the category “${name}”?` + (n ? ` Its ${plural(n, 'wish')} will have no category.` : '');
+    if (!await confirmBox(question, 'Delete')) return;
+    adminDo(button, 'Deleting…', 'delete-category', { name }, () => toast(`Deleted the category “${name}”.`));
+}
+
+$('add-category').addEventListener('click', e => {
+    const name = $('new-category').value.trim();
+    if (!name) return showError('admin-error', 'Type the new category first.');
+    adminDo(e.currentTarget, 'Adding…', 'add-category', { name }, () => {
+        $('new-category').value = '';
+        toast(`Added the category “${name}”.`);
+    });
+});
+$('new-category').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        $('add-category').click();
+    }
+});
+
 // A wrong passcode (or not being Admin) goes back to signing in; anything else shows in the panel.
 function adminFailed(err) {
     if (err.code === 'wrong-passcode' || err.code === 'not-admin') {
@@ -589,11 +672,14 @@ function adminFailed(err) {
         handleError(err);
         return;
     }
-    showError('admin-error', err.code === 'network' ? "Couldn't reach the list. Check your connection and try again." : err.message);
+    const message = err.code === 'network' ? "Couldn't reach the list. Check your connection and try again." : err.message;
+    showError('admin-error', message);
+    toast(message); // the panel's error box can be scrolled out of sight
 }
 
 async function openAdmin() {
     adminInfo = null;
+    renaming = null;
     renderAdmin();
     $('new-pass').value = '';
     $('new-admin-pass').value = '';
@@ -673,6 +759,11 @@ document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click
 
 $('sort').addEventListener('change', () => { saved.set('wish-sort', $('sort').value); render(); });
 $('show').addEventListener('change', render);
+$('category').addEventListener('change', () => {
+    categoryFilter = $('category').value;
+    saved.set('wish-category', categoryFilter);
+    render();
+});
 
 $('spoilers').addEventListener('click', () => {
     noSpoilers = !noSpoilers;
