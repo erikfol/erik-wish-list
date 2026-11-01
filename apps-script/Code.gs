@@ -2,9 +2,9 @@
 // Paste this whole file into the sheet's Extensions → Apps Script, set the PASSCODE
 // script property, and deploy it as a web app (Execute as: Me, Who has access: Anyone).
 //
-// Anyone can read the list (GET). Every change (POST) needs the family passcode, which
-// lives only in this script's properties, never in the web page. With it, family members
-// mark what they're getting. Adding, changing and deleting wishes, and the Admin tools, are
+// Everything goes through POST with the family passcode, which lives only in this script's
+// properties, never in the web page: without it you can't even see the list. With it,
+// family members see the list and mark what they're getting. Adding, changing and deleting wishes, and the Admin tools, are
 // for the name Admin only: Admin uses ADMIN_PASSCODE once one is set, and the family
 // passcode until then.
 
@@ -24,8 +24,9 @@ const ADMIN_NAME = 'admin';
 const PANEL_ACTIONS = ['admin-info', 'set-passcode', 'set-admin-passcode', 'restore', 'remove-taken'];
 const ADMIN_ACTIONS = ['save', 'delete', 'preview'].concat(PANEL_ACTIONS);
 
+// The list is only for people who are signed in, so there's nothing to see here.
 function doGet() {
-  return json({ items: readItems() });
+  return json({ error: 'sign-in-needed' });
 }
 
 function doPost(e) {
@@ -42,7 +43,8 @@ function doPost(e) {
     Utilities.sleep(1500); // makes guessing slow
     return json({ error: 'wrong-passcode' });
   }
-  if (req.action === 'check') return json({ ok: true, isAdmin: role === 'admin' });
+  if (req.action === 'check') return json({ ok: true, isAdmin: role === 'admin', items: readItems() });
+  if (req.action === 'list') return json({ ok: true, items: readItems() });
   if (ADMIN_ACTIONS.indexOf(req.action) >= 0 && role !== 'admin') return json({ error: 'not-admin' });
   if (req.action === 'preview') return json({ preview: previewLink(req.url) });
   if (req.action === 'admin-info') return json({ ok: true, adminInfo: adminInfo(props) });

@@ -1,6 +1,6 @@
-// Erik's Wish List. The list lives in a Google Sheet behind apps-script/Code.gs: anyone can
-// read it, and every change needs the family passcode. With no SCRIPT_URL it's a demo kept in this browser.
-import { SCRIPT_URL, NAMES } from './config.js';
+// Erik's Wish List. The list lives in a Google Sheet behind apps-script/Code.gs: nobody can
+// see it or change it without the family passcode. With no SCRIPT_URL it's a demo kept in this browser.
+import { SCRIPT_URL, SHEET_URL, NAMES } from './config.js';
 
 const OWNER = 'Erik';
 const PRIORITY = { 3: 'Top pick', 2: 'Would love', 1: 'Nice to have' };
@@ -31,13 +31,6 @@ class ApiError extends Error {
 }
 
 // ---- Talking to the sheet ----
-
-async function fetchItems() {
-    if (DEMO) return demo.items();
-    const res = await fetch(SCRIPT_URL);
-    if (!res.ok) throw new ApiError('network');
-    return (await res.json()).items || [];
-}
 
 // Sends a change along with the passcode. After a change the answer carries the whole list.
 async function send(action, data = {}) {
@@ -89,7 +82,8 @@ const demo = {
         const item = list.find(i => i.id === (req.id || req.item?.id));
         const now = new Date().toISOString();
         switch (req.action) {
-            case 'check': return { ok: true, isAdmin: String(req.who).toLowerCase() === 'admin' };
+            case 'check': return { ok: true, isAdmin: String(req.who).toLowerCase() === 'admin', items: list };
+            case 'list': return { ok: true, items: list };
             case 'preview': return { preview: {} };
             case 'save': {
                 const { name, url, image, price, store, priority, details } = req.item;
@@ -243,21 +237,24 @@ function render() {
     $('add').hidden = !(signedIn && session.admin);
     $('admin-btn').hidden = !(signedIn && session.admin);
     $('show-wrap').hidden = noSpoilers;
+    // Not signed in: only the message asking you to sign in.
+    $('locked').hidden = signedIn;
+    $('toolbar').hidden = !signedIn;
+    document.querySelector('.footer').hidden = !signedIn;
+    if (!signedIn) $('status').textContent = '';
 
     const open = items.filter(i => !i.claimedBy).length;
-    $('summary').textContent = !items.length ? '' :
+    $('summary').textContent = !signedIn || !items.length ? '' :
         noSpoilers ? plural(items.length, 'wish') : `${plural(items.length, 'wish')} · ${open} still available`;
-    $('how').textContent = noSpoilers
-        ? "No-spoiler mode is on, so this device doesn't show what people are getting."
-        : signedIn
-            ? "Getting something? Tap “I'll get this” on it so nobody else buys it too."
-            : `Found something you'd like to get ${OWNER}? Tap “I'll get this” and sign in with the family passcode, so nobody doubles up.`;
+    $('how').textContent = !signedIn ? ''
+        : noSpoilers ? "No-spoiler mode is on, so this device doesn't show what people are getting."
+        : "Getting something? Tap “I'll get this” on it so nobody else buys it too.";
 
     $('spoiler-text').textContent = noSpoilers ? '🙈 No-spoiler mode is on for this device. ' : `${OWNER}? `;
     $('spoilers').textContent = noSpoilers ? 'Show what people are getting' : "Turn on no-spoiler mode so you can't see what people are getting";
 
-    const list = visibleItems();
-    $('list').replaceChildren(...(list.length ? list.map(card) : loadedAt ? [emptyState()] : []));
+    const list = signedIn ? visibleItems() : [];
+    $('list').replaceChildren(...(list.length ? list.map(card) : signedIn && loadedAt ? [emptyState()] : []));
 }
 
 function emptyState() {
@@ -354,6 +351,8 @@ function openSignIn(then, message) {
 
 function signOut() {
     session = { passcode: '', name: session.name, admin: false };
+    items = [];
+    loadedAt = 0;
     saved.remove('wish-passcode');
     saved.remove('wish-admin');
     render();
@@ -696,12 +695,16 @@ $('share').addEventListener('click', async () => {
     }
 });
 
+// Only people who are signed in get the list.
 async function load() {
+    if (!session.passcode) return render();
     if (!items.length) $('status').textContent = 'Loading the list…';
     try {
-        setItems(await fetchItems());
+        await send('list'); // send() keeps the list it answers with
         $('status').textContent = '';
-    } catch {
+    } catch (err) {
+        $('status').textContent = '';
+        if (err.code !== 'network') return handleError(err); // e.g. the passcode was changed
         $('status').replaceChildren("Couldn't load the list. ", h('button', { class: 'link-btn', type: 'button', onclick: load }, 'Try again'));
     }
     render();
@@ -714,6 +717,8 @@ document.addEventListener('visibilitychange', () => {
 
 if (['priority', 'low', 'high', 'new'].includes(saved.get('wish-sort'))) $('sort').value = saved.get('wish-sort');
 $('name').append(...NAMES.map(name => h('option', { value: name }, name)));
+$('sheet-link').href = SHEET_URL;
+$('locked-signin').addEventListener('click', () => openSignIn());
 $('demo-banner').hidden = !DEMO;
 render();
 load();

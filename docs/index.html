@@ -44,6 +44,13 @@
             <button id="add" class="btn primary" type="button" hidden>＋ Add a wish</button>
         </section>
 
+        <div id="locked" class="locked" hidden>
+            <div class="big">🔒</div>
+            <h2>Sign in to view the list</h2>
+            <p>Pick your name and enter the family passcode. Ask Erik if you don't have it.</p>
+            <button id="locked-signin" class="btn primary" type="button">Sign in</button>
+        </div>
+
         <div id="toolbar" class="toolbar">
             <label>Sort
                 <select id="sort">
@@ -145,6 +152,7 @@
     <dialog id="admin-dialog" class="wide">
         <form method="dialog" id="admin-form">
             <h2>Admin</h2>
+            <p><a id="sheet-link" class="btn" target="_blank" rel="noopener noreferrer">📊 Open Google Sheets ↗</a></p>
             <p id="admin-loading" class="hint">Loading…</p>
             <p id="admin-error" class="error" hidden></p>
 

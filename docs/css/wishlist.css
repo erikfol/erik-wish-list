@@ -233,6 +233,21 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 }
 
 .empty { text-align: center; padding: 50px 20px; color: var(--muted); }
+
+/* Not signed in: a message in the middle instead of the list */
+.locked {
+    max-width: 440px;
+    margin: 40px auto;
+    padding: 34px 28px;
+    text-align: center;
+    background: var(--surface);
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.locked .big { font-size: 2.4em; margin-bottom: 6px; }
+.locked h2 { font-family: var(--festive); font-size: 1.5em; margin-bottom: 8px; }
+.locked p { color: var(--muted); line-height: 1.45; margin-bottom: 18px; }
+.locked .btn { padding: 9px 22px; font-size: 1em; }
 .empty .big { font-size: 2.5em; margin-bottom: 8px; }
 .status { text-align: center; color: var(--muted); margin-top: 20px; font-size: 0.9em; }
 
