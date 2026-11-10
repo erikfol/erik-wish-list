@@ -49,7 +49,6 @@ body {
     cursor: pointer;
 }
 .top-btn:hover { background: rgba(255,255,255,0.22); }
-.who { font-size: 0.88em; opacity: 0.85; }
 
 /* A string of Christmas lights hanging under the top bar */
 .lights {
@@ -294,6 +293,8 @@ dialog.wide { width: min(640px, calc(100% - 32px)); }
 .admin-section h3 { font-size: 1em; }
 .current { font-size: 0.92em; }
 .current code { background: #eef1f6; padding: 2px 6px; border-radius: 4px; font-size: 1em; }
+#family-link { word-break: break-all; }
+.claim-what { font-weight: 600; }
 .admin-list { display: flex; flex-direction: column; font-size: 0.9em; }
 .admin-list.log { max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; }
 .admin-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f0f2f5; }

@@ -22,16 +22,15 @@
         <div class="brand">🎄 <span id="brand-name">Erik's Christmas List</span></div>
         <div class="top-actions">
             <button id="share" class="top-btn" type="button" title="Share this page">Share</button>
-            <span id="who" class="who" hidden></span>
             <button id="admin-btn" class="top-btn" type="button" hidden>⚙ Admin</button>
-            <button id="signin" class="top-btn" type="button">🔒 Family sign-in</button>
+            <button id="signin" class="top-btn" type="button">🔒 Admin</button>
         </div>
     </header>
     <div class="lights" aria-hidden="true"></div>
 
     <div id="demo-banner" class="banner" hidden>
         <strong>Demo mode.</strong> This page isn't connected to its Google Sheet yet, so changes are saved only in this browser.
-        Follow “Setup” in the README to connect it. Any passcode works in demo mode.
+        Follow “Setup” in the README to connect it. Any passcode works for Admin in demo mode.
     </div>
 
     <main>
@@ -46,9 +45,8 @@
 
         <div id="locked" class="locked" hidden>
             <div class="big">🔒</div>
-            <h2>Sign in to view the list</h2>
-            <p>Pick your name and enter the family passcode. Ask Erik if you don't have it.</p>
-            <button id="locked-signin" class="btn primary" type="button">Sign in</button>
+            <h2>Open the family link</h2>
+            <p id="locked-text"></p>
         </div>
 
         <div id="toolbar" class="toolbar">
@@ -81,17 +79,28 @@
         <button id="spoilers" class="link-btn" type="button"></button>
     </footer>
 
-    <!-- Family sign-in -->
+    <!-- Claiming a wish -->
+    <dialog id="claim-dialog">
+        <form method="dialog" id="claim-form">
+            <h2>🎁 I'll get this</h2>
+            <p id="claim-what" class="claim-what"></p>
+            <label><span>Your name <span class="hint">(so others can see who's getting it)</span></span>
+                <input id="claim-name" type="text" maxlength="30" autocomplete="name" autocapitalize="words" required>
+            </label>
+            <p id="claim-error" class="error" hidden></p>
+            <div class="dialog-actions">
+                <button type="button" class="btn" data-close>Cancel</button>
+                <button type="submit" class="btn primary">Mark it as mine</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Admin sign-in -->
     <dialog id="signin-dialog">
         <form method="dialog" id="signin-form">
-            <h2>Family sign-in</h2>
-            <p class="hint">Signing in lets you mark what you're getting, so nobody doubles up. Ask Erik for the family passcode.</p>
-            <label><span>Your name <span class="hint">(so others can see who's getting what)</span></span>
-                <select id="name" required>
-                    <option value="">Choose your name…</option>
-                </select>
-            </label>
-            <label>Family passcode
+            <h2>Admin sign-in</h2>
+            <p class="hint">For adding, changing and deleting wishes. Family doesn't need to sign in.</p>
+            <label>Admin passcode
                 <input id="passcode" type="password" autocomplete="current-password" required>
             </label>
             <p id="signin-error" class="error" hidden></p>
@@ -156,7 +165,7 @@
         </form>
     </dialog>
 
-    <!-- Admin tools (sign in with the name Admin) -->
+    <!-- Admin tools (sign in with the admin passcode) -->
     <dialog id="admin-dialog" class="wide">
         <form method="dialog" id="admin-form">
             <h2>Admin</h2>
@@ -165,12 +174,12 @@
             <p id="admin-error" class="error" hidden></p>
 
             <section class="admin-section">
-                <h3>Family passcode</h3>
-                <p class="hint">Everyone uses it to sign in. After you change it, anyone using the old one is asked for the new one the next time they change something, so let them know.</p>
-                <p class="current">Now: <code id="cur-pass">••••••</code> <button id="show-pass" type="button" class="link-btn">Show</button></p>
+                <h3>Family link</h3>
+                <p class="hint">Send this link to the family. It opens the list, and they type their name when they say they'll get something. If it ends up somewhere it shouldn't, make a new link: the old one stops working, so send the new one to everyone.</p>
+                <p class="current"><code id="family-link"></code></p>
                 <span class="row">
-                    <input id="new-pass" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="100" placeholder="New family passcode">
-                    <button id="set-pass" type="button" class="btn primary">Change</button>
+                    <button id="copy-link" type="button" class="btn primary">Copy link</button>
+                    <button id="new-link" type="button" class="btn">Make a new link</button>
                 </span>
             </section>
 

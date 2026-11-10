@@ -4,6 +4,3 @@ export const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzwVL52R9aixL
 
 // Where Admin → Open Google Sheets goes.
 export const SHEET_URL = 'https://docs.google.com/spreadsheets/u/0/';
-
-// The names to pick from when signing in. Admin gets the Admin tools (README.md, "Admin").
-export const NAMES = ['Dad', 'Lori', 'Paul', 'Amanda', 'Nicole', 'Toni', 'Dominick', 'Admin', 'Guest'];

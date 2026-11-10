@@ -1,6 +1,7 @@
-// Erik's Wish List. The list lives in a Google Sheet behind apps-script/Code.gs: nobody can
-// see it or change it without the family passcode. With no SCRIPT_URL it's a demo kept in this browser.
-import { SCRIPT_URL, SHEET_URL, NAMES } from './config.js';
+// Erik's Wish List. The list lives in a Google Sheet behind apps-script/Code.gs: the family
+// link (?k=…) opens it, and only Admin, with the admin passcode, changes the wishes.
+// With no SCRIPT_URL it's a demo kept in this browser.
+import { SCRIPT_URL, SHEET_URL } from './config.js';
 
 const OWNER = 'Erik';
 const PRIORITY = { 3: 'Top pick', 2: 'Would love', 1: 'Nice to have' };
@@ -18,11 +19,31 @@ const saved = {
 let items = [];
 let categories = []; // names, A to Z, from the sheet's Categories tab
 let loadedAt = 0;
-let session = { passcode: saved.get('wish-passcode') || '', name: saved.get('wish-name') || '', admin: saved.get('wish-admin') === '1' };
+// The family link's key: from the address (?k=…) when there is one, else the one this device kept.
+const keyInAddress = (new URLSearchParams(location.search).get('k') || '').trim();
+if (keyInAddress) saved.set('wish-key', keyInAddress);
+saved.remove('wish-passcode'); // from when everyone signed in with the family passcode
+saved.remove('wish-admin');
+const savedName = saved.get('wish-name') || '';
+let session = {
+    key: keyInAddress || saved.get('wish-key') || '',
+    name: savedName.toLowerCase() === 'admin' ? '' : savedName, // the name typed when claiming
+    adminPasscode: saved.get('wish-admin-pass') || '',
+};
+let linkFailed = false;  // the script turned this device's family link away
 let noSpoilers = saved.get('wish-no-spoilers') === '1';
 let categoryFilter = saved.get('wish-category') ?? '*'; // '*' everything, '' no category
 let editing = null;      // the wish open in the edit dialog ({} for a new one)
-let afterSignIn = null;  // what to do once signed in (claiming a wish starts there)
+let claiming = null;     // the wish open in the claim dialog
+
+const isAdmin = () => !!session.adminPasscode;
+// Without the family link (and not Admin) there's nothing to show.
+const locked = () => !DEMO && !session.key && !isAdmin();
+const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
+function familyLink() {
+    return location.origin + location.pathname + '?k=' + encodeURIComponent(session.key);
+}
 
 class ApiError extends Error {
     constructor(code, extra = {}) {
@@ -34,9 +55,10 @@ class ApiError extends Error {
 
 // ---- Talking to the sheet ----
 
-// Sends a change along with the passcode. After a change the answer carries the whole list.
+// Sends a change along with the family link's key (and the admin passcode for Admin).
+// After a change the answer carries the whole list.
 async function send(action, data = {}) {
-    const body = { action, passcode: session.passcode, who: session.name, ...data };
+    const body = { action, key: session.key, adminPasscode: session.adminPasscode, who: session.name, ...data };
     const out = DEMO ? demo.send(body) : await post(body);
     if (out.items) setItems(out.items);
     if (out.categories) categories = out.categories;
@@ -87,7 +109,7 @@ const demo = {
         const item = list.find(i => i.id === (req.id || req.item?.id));
         const now = new Date().toISOString();
         switch (req.action) {
-            case 'check': return { ok: true, isAdmin: String(req.who).toLowerCase() === 'admin', items: list, categories: DEMO_CATEGORIES };
+            case 'check': return { ok: true, isAdmin: !!String(req.adminPasscode || '').trim(), items: list, categories: DEMO_CATEGORIES };
             case 'list': return { ok: true, items: list, categories: DEMO_CATEGORIES };
             case 'preview': return { preview: {} };
             case 'save': {
@@ -101,8 +123,9 @@ const demo = {
             case 'delete': if (item) list.splice(list.indexOf(item), 1); break;
             case 'claim':
                 if (!item) return { error: 'failed', message: 'That wish was removed' };
-                if (item.claimedBy && item.claimedBy !== req.who) return { error: 'already-claimed', claimedBy: item.claimedBy, items: list };
-                Object.assign(item, { claimedBy: req.who || 'Someone', claimed: now });
+                if (!String(req.who || '').trim()) return { error: 'failed', message: 'Type your name first.' };
+                if (item.claimedBy && !sameName(item.claimedBy, req.who)) return { error: 'already-claimed', claimedBy: item.claimedBy, items: list };
+                Object.assign(item, { claimedBy: req.who, claimed: now });
                 break;
             case 'unclaim': if (item) Object.assign(item, { claimedBy: '', claimed: '' }); break;
         }
@@ -188,15 +211,22 @@ function showError(id, text) {
 }
 
 function handleError(err) {
-    if (err.code === 'wrong-passcode') {
+    if (err.code === 'needs-link') {
+        // A link that was replaced with a new one (or was never right): show the locked message.
+        session.key = '';
+        saved.remove('wish-key');
+        linkFailed = true;
+        items = [];
+        loadedAt = 0;
+    } else if (err.code === 'wrong-passcode') {
         signOut();
-        openSignIn(null, `That passcode didn't work. It may have changed, so ask ${OWNER} for the new one.`);
+        openSignIn('That admin passcode no longer works. Sign in again.');
     } else if (err.code === 'not-admin') {
-        toast('Only Admin can add, change or delete wishes.');
+        toast('Only Admin can do that.');
     } else if (err.code === 'already-claimed') {
         toast(`${err.claimedBy} is already getting that one.`);
     } else if (err.code === 'no-passcode-set') {
-        toast('The sheet has no PASSCODE set up yet (README → Setup).');
+        toast('The sheet has no ADMIN_PASSCODE set up yet (README → Setup).');
     } else if (err.code === 'network') {
         toast("Couldn't reach the list. Check your connection and try again.");
     } else {
@@ -236,23 +266,26 @@ function visibleItems() {
 }
 
 function render() {
-    const signedIn = !!session.passcode;
-    $('signin').textContent = signedIn ? 'Sign out' : '🔒 Family sign-in';
-    $('who').hidden = !signedIn;
-    $('who').textContent = `Hi, ${session.name}`;
-    $('add').hidden = !(signedIn && session.admin);
-    $('admin-btn').hidden = !(signedIn && session.admin);
+    const showing = !locked();
+    const admin = isAdmin();
+    $('signin').textContent = admin ? 'Sign out' : '🔒 Admin';
+    $('add').hidden = !admin;
+    $('admin-btn').hidden = !admin;
+    $('share').hidden = !showing;
     $('show-wrap').hidden = noSpoilers;
-    // Not signed in: only the message asking you to sign in.
-    $('locked').hidden = signedIn;
-    $('toolbar').hidden = !signedIn;
-    document.querySelector('.footer').hidden = !signedIn;
-    if (!signedIn) $('status').textContent = '';
+    // Without the family link: only the message asking for it.
+    $('locked').hidden = showing;
+    $('locked-text').textContent = linkFailed
+        ? `That link doesn't work anymore. Ask ${OWNER} for the new one.`
+        : `This list opens with the family link. Ask ${OWNER} for it.`;
+    $('toolbar').hidden = !showing;
+    document.querySelector('.footer').hidden = !showing;
+    if (!showing) $('status').textContent = '';
 
     const open = items.filter(i => !i.claimedBy).length;
-    $('summary').textContent = !signedIn || !items.length ? '' :
+    $('summary').textContent = !showing || !items.length ? '' :
         noSpoilers ? plural(items.length, 'wish') : `${plural(items.length, 'wish')} · ${open} still available`;
-    $('how').textContent = !signedIn ? ''
+    $('how').textContent = !showing ? ''
         : noSpoilers ? "No-spoiler mode is on, so this device doesn't show what people are getting."
         : "Getting something? Tap “I'll get this” on it so nobody else buys it too.";
 
@@ -260,8 +293,8 @@ function render() {
     $('spoilers').textContent = noSpoilers ? 'Show what people are getting' : "Turn on no-spoiler mode so you can't see what people are getting";
 
     fillCategoryChoices();
-    const list = signedIn ? visibleItems() : [];
-    $('list').replaceChildren(...(list.length ? list.map(card) : signedIn && loadedAt ? [emptyState()] : []));
+    const list = showing ? visibleItems() : [];
+    $('list').replaceChildren(...(list.length ? list.map(card) : showing && loadedAt ? [emptyState()] : []));
 }
 
 // The Category filter: everything, each category, and no category, with how many wishes each has.
@@ -285,7 +318,7 @@ function emptyState() {
     return h('div', { class: 'empty' },
         h('div', { class: 'big' }, '🎄'),
         h('p', {}, 'No wishes on the list yet.'),
-        h('p', {}, session.passcode && session.admin ? 'Tap “＋ Add a wish” to start it.' : 'Check back soon!'));
+        h('p', {}, isAdmin() ? 'Tap “＋ Add a wish” to start it.' : 'Check back soon!'));
 }
 
 function noPic() {
@@ -293,7 +326,6 @@ function noPic() {
 }
 
 function card(item) {
-    const signedIn = !!session.passcode;
     const taken = !noSpoilers && !!item.claimedBy;
     const url = safeLink(item.url);
     const image = safeLink(item.image);
@@ -310,15 +342,15 @@ function card(item) {
 
     let note = null;
     if (taken) {
-        const who = !signedIn ? 'Someone is' : item.claimedBy === session.name ? "You're" : `${item.claimedBy} is`;
+        const who = session.name && sameName(item.claimedBy, session.name) ? "You're" : `${item.claimedBy} is`;
         note = h('div', { class: 'taken-note' }, `🎁 ${who} getting this`);
     }
 
     let claimButton = null;
     if (!noSpoilers) {
         claimButton = item.claimedBy
-            ? signedIn && h('button', { class: 'btn', type: 'button', onclick: e => unclaim(item, e.currentTarget) }, 'Undo')
-            : h('button', { class: 'btn claim', type: 'button', onclick: e => claim(item, e.currentTarget) }, "🎁 I'll get this");
+            ? h('button', { class: 'btn', type: 'button', onclick: e => unclaim(item, e.currentTarget) }, 'Undo')
+            : h('button', { class: 'btn claim', type: 'button', onclick: () => claim(item) }, "🎁 I'll get this");
     }
 
     return h('article', { class: taken ? 'card taken' : 'card' },
@@ -336,24 +368,45 @@ function card(item) {
             h('div', { class: 'actions' },
                 url && h('a', { class: 'btn', href: url, target: '_blank', rel: 'noopener noreferrer' }, 'View it ↗'),
                 claimButton,
-                signedIn && session.admin && h('button', { class: 'btn', type: 'button', title: 'Change or delete this wish', onclick: () => openItem(item) }, '✎ Edit'))));
+                isAdmin() && h('button', { class: 'btn', type: 'button', title: 'Change or delete this wish', onclick: () => openItem(item) }, '✎ Edit'))));
 }
 
 // ---- Claiming ----
 
-async function claim(item, button) {
-    if (!session.passcode) return openSignIn(() => claim(item, button));
-    try {
-        await working(button, 'Saving…', () => send('claim', { id: item.id }));
-        render();
-        toast(`Thanks, ${session.name}! It's marked as yours.`);
-    } catch (err) {
-        handleError(err);
-    }
+// Asks for the claimer's name every time, which also catches a tap by mistake.
+function claim(item) {
+    claiming = item;
+    $('claim-what').textContent = item.name;
+    $('claim-name').value = session.name;
+    showError('claim-error', '');
+    $('claim-dialog').showModal();
+    $('claim-name').focus();
+    $('claim-name').select();
 }
 
+$('claim-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const name = $('claim-name').value.replace(/\s+/g, ' ').trim();
+    if (!name) return showError('claim-error', 'Type your name first.');
+    try {
+        await working(e.submitter || $('claim-form').querySelector('[type=submit]'), 'Saving…',
+            () => send('claim', { id: claiming.id, who: name }));
+    } catch (err) {
+        if (err.code === 'network' || err.code === 'failed') {
+            return showError('claim-error', err.code === 'network' ? "Couldn't reach the list. Check your connection and try again." : err.message);
+        }
+        $('claim-dialog').close();
+        return handleError(err);
+    }
+    session.name = name;
+    saved.set('wish-name', name);
+    $('claim-dialog').close();
+    render();
+    toast(`Thanks, ${name}! It's marked as yours.`);
+});
+
 async function unclaim(item, button) {
-    if (item.claimedBy !== session.name &&
+    if (!sameName(item.claimedBy, session.name) &&
         !await confirmBox(`${item.claimedBy} said they're getting “${item.name}”. Mark it as available again?`, 'Mark available')) return;
     try {
         await working(button, 'Saving…', () => send('unclaim', { id: item.id }));
@@ -364,58 +417,61 @@ async function unclaim(item, button) {
     }
 }
 
-// ---- Signing in ----
+// ---- Admin sign-in ----
 
-function openSignIn(then, message) {
-    afterSignIn = then || null;
+function openSignIn(message) {
     $('passcode').value = '';
-    $('name').value = NAMES.includes(session.name) ? session.name : '';
     showError('signin-error', message);
     $('signin-dialog').showModal();
-    ($('name').value ? $('passcode') : $('name')).focus();
+    $('passcode').focus();
 }
 
+// Signs out of Admin; the family link still shows the list on this device.
 function signOut() {
-    session = { passcode: '', name: session.name, admin: false };
-    items = [];
-    loadedAt = 0;
-    saved.remove('wish-passcode');
-    saved.remove('wish-admin');
+    session.adminPasscode = '';
+    saved.remove('wish-admin-pass');
+    if (locked()) {
+        items = [];
+        loadedAt = 0;
+    }
     render();
+}
+
+function keepLinkKey(key) {
+    if (!key || key === session.key) return;
+    session.key = key;
+    saved.set('wish-key', key);
+    linkFailed = false;
+    if (new URLSearchParams(location.search).has('k')) history.replaceState(null, '', familyLink());
 }
 
 $('signin-form').addEventListener('submit', async e => {
     e.preventDefault();
-    const next = { passcode: $('passcode').value.trim(), name: $('name').value.trim(), admin: false };
-    const before = session;
-    session = next;
+    const passcode = $('passcode').value.trim();
+    if (!passcode) return showError('signin-error', 'Type the admin passcode.');
+    session.adminPasscode = passcode;
     try {
         const out = await working(e.submitter || $('signin-form').querySelector('[type=submit]'), 'Checking…', () => send('check'));
-        next.admin = !!out.isAdmin;
+        if (!out.isAdmin) throw new ApiError('wrong-passcode');
+        keepLinkKey(out.linkKey);
     } catch (err) {
-        session = before;
+        session.adminPasscode = '';
         showError('signin-error',
-            err.code === 'wrong-passcode' && next.name.toLowerCase() === 'admin' ? "That passcode doesn't work for Admin."
-            : err.code === 'wrong-passcode' ? `That passcode isn't right. Ask ${OWNER} for it.`
-            : err.code === 'no-passcode-set' ? 'The sheet has no PASSCODE set up yet (README → Setup).'
+            err.code === 'wrong-passcode' ? "That isn't the admin passcode."
+            : err.code === 'no-passcode-set' ? 'The sheet has no ADMIN_PASSCODE set up yet (README → Setup).'
             : "Couldn't reach the list. Check your connection and try again.");
         return;
     }
-    saved.set('wish-passcode', next.passcode);
-    saved.set('wish-name', next.name);
-    if (next.admin) saved.set('wish-admin', '1'); else saved.remove('wish-admin');
+    saved.set('wish-admin-pass', passcode);
     $('signin-dialog').close();
     render();
-    toast(next.admin ? 'Signed in as Admin. The Admin tools are under ⚙ Admin at the top.' : `Signed in. Hi, ${next.name}!`);
-    const then = afterSignIn;
-    afterSignIn = null;
-    if (then) then();
+    toast('Signed in as Admin. The Admin tools are under ⚙ Admin at the top.');
 });
 
 $('signin').addEventListener('click', () => {
-    if (session.passcode) {
+    if (isAdmin()) {
         signOut();
-        toast('Signed out on this device.');
+        toast('Signed out of Admin on this device.');
     } else {
         openSignIn();
     }
@@ -563,9 +619,14 @@ $('delete').addEventListener('click', async () => {
 
 $('add').addEventListener('click', () => openItem(null));
 
-// ---- Admin (sign in with the name Admin) ----
+// ---- Admin (sign in with the admin passcode) ----
 
-let adminInfo = null; // from the sheet: familyPasscode, hasAdminPasscode, deleted, log
+let adminInfo = null; // from the sheet: linkKey, hasAdminPasscode, deleted, log
+
+function takeAdminInfo(info) {
+    adminInfo = info;
+    if (info) keepLinkKey(info.linkKey);
+}
 
 const ACTIVITY = {
     added: w => `added “${w}”`,
@@ -576,6 +637,7 @@ const ACTIVITY = {
     restored: w => `brought back “${w}”`,
     'removed-taken': n => `cleared ${plural(Number(n), 'wish')} people got`,
     'family-passcode': () => 'changed the family passcode',
+    'new-link': () => 'made a new family link',
     'admin-passcode': () => 'set the admin passcode',
     'category-added': c => `added the category “${c}”`,
     'category-renamed': c => `renamed the category “${c.split(' → ')[0]}” to “${c.split(' → ').slice(1).join(' → ')}”`,
@@ -589,9 +651,11 @@ function renderAdmin() {
     document.querySelectorAll('#admin-dialog .admin-section').forEach(s => { s.hidden = !info; });
     if (!info) return;
 
+    $('family-link').textContent = familyLink();
+
     $('admin-pass-status').textContent = info.hasAdminPasscode
-        ? "Admin has its own passcode, so the family passcode isn't enough to sign in as Admin. Type a new one here to change it."
-        : 'Right now Admin signs in with the family passcode, so anyone who knows it can sign in as Admin. Set an admin passcode that only you know.';
+        ? 'Keep this one to yourself. Type a new one here to change it.'
+        : 'There is no admin passcode yet, so Admin signs in with the old family passcode, which the family knows. Set one that only you know.';
     $('set-admin-pass').textContent = info.hasAdminPasscode ? 'Change' : 'Set';
 
     renderCategoryAdmin();
@@ -681,14 +745,11 @@ async function openAdmin() {
     adminInfo = null;
     renaming = null;
     renderAdmin();
-    $('new-pass').value = '';
     $('new-admin-pass').value = '';
-    $('cur-pass').textContent = '••••••';
-    $('show-pass').textContent = 'Show';
     showError('admin-error', '');
     $('admin-dialog').showModal();
     try {
-        adminInfo = (await send('admin-info')).adminInfo;
+        takeAdminInfo((await send('admin-info')).adminInfo);
         renderAdmin();
     } catch (err) {
         adminFailed(err);
@@ -699,7 +760,7 @@ async function adminDo(button, label, action, data, done) {
     showError('admin-error', '');
     try {
         const out = await working(button, label, () => send(action, data));
-        adminInfo = out.adminInfo;
+        takeAdminInfo(out.adminInfo);
         render();
         renderAdmin();
         done();
@@ -708,40 +769,32 @@ async function adminDo(button, label, action, data, done) {
     }
 }
 
-function keepPasscode(passcode) {
-    session.passcode = passcode;
-    saved.set('wish-passcode', passcode);
-}
-
 $('admin-btn').addEventListener('click', openAdmin);
 $('admin-form').addEventListener('submit', e => e.preventDefault());
 
-$('show-pass').addEventListener('click', () => {
-    const showing = $('show-pass').textContent === 'Hide';
-    $('cur-pass').textContent = showing ? '••••••' : adminInfo.familyPasscode;
-    $('show-pass').textContent = showing ? 'Show' : 'Hide';
+$('copy-link').addEventListener('click', async () => {
+    try {
+        await navigator.clipboard.writeText(familyLink());
+        toast('Link copied. Send it to the family.');
+    } catch {
+        toast(familyLink());
+    }
 });
 
-$('set-pass').addEventListener('click', e => {
-    const newPasscode = $('new-pass').value.trim();
-    if (!newPasscode) return showError('admin-error', 'Type the new family passcode first.');
-    const adminUsesIt = !adminInfo.hasAdminPasscode; // until there's an admin passcode, Admin signs in with this one
-    adminDo(e.currentTarget, 'Changing…', 'set-passcode', { newPasscode }, () => {
-        if (adminUsesIt) keepPasscode(newPasscode);
-        $('new-pass').value = '';
-        $('cur-pass').textContent = '••••••';
-        $('show-pass').textContent = 'Show';
-        toast('Family passcode changed. Let everyone know the new one.');
-    });
+$('new-link').addEventListener('click', async e => {
+    const button = e.currentTarget;
+    if (!await confirmBox('Make a new family link? The old link stops working right away, so send the new one to everyone.', 'Make a new link')) return;
+    adminDo(button, 'Making…', 'new-link', {}, () => toast('New link made. Copy it and send it to the family.'));
 });
 
 $('set-admin-pass').addEventListener('click', e => {
     const newPasscode = $('new-admin-pass').value.trim();
     if (!newPasscode) return showError('admin-error', 'Type the admin passcode first.');
     adminDo(e.currentTarget, 'Saving…', 'set-admin-passcode', { newPasscode }, () => {
-        keepPasscode(newPasscode);
+        session.adminPasscode = newPasscode;
+        saved.set('wish-admin-pass', newPasscode);
         $('new-admin-pass').value = '';
-        toast('Admin passcode set. Use it with the name Admin from now on.');
+        toast('Admin passcode set. Use it to sign in as Admin from now on.');
     });
 });
 
@@ -773,7 +826,7 @@ $('spoilers').addEventListener('click', () => {
 });
 
 $('share').addEventListener('click', async () => {
-    const url = location.href.split('#')[0];
+    const url = session.key ? familyLink() : location.href.split('#')[0];
     if (navigator.share) {
         try { await navigator.share({ title: document.title, url }); } catch { /* closed the share sheet */ }
         return;
@@ -786,16 +839,16 @@ $('share').addEventListener('click', async () => {
     }
 });
 
-// Only people who are signed in get the list.
+// Only the family link (or Admin) gets the list.
 async function load() {
-    if (!session.passcode) return render();
+    if (locked()) return render();
     if (!items.length) $('status').textContent = 'Loading the list…';
     try {
         await send('list'); // send() keeps the list it answers with
         $('status').textContent = '';
     } catch (err) {
         $('status').textContent = '';
-        if (err.code !== 'network') return handleError(err); // e.g. the passcode was changed
+        if (err.code !== 'network') return handleError(err); // e.g. a new family link was made
         $('status').replaceChildren("Couldn't load the list. ", h('button', { class: 'link-btn', type: 'button', onclick: load }, 'Try again'));
     }
     render();
@@ -807,9 +860,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 if (['priority', 'low', 'high', 'new'].includes(saved.get('wish-sort'))) $('sort').value = saved.get('wish-sort');
-$('name').append(...NAMES.map(name => h('option', { value: name }, name)));
 $('sheet-link').href = SHEET_URL;
-$('locked-signin').addEventListener('click', () => openSignIn());
 $('demo-banner').hidden = !DEMO;
 render();
 load();

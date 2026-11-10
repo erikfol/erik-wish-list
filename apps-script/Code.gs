@@ -1,12 +1,12 @@
 // Erik's Wish List: the Google Sheet "server" for docs/ (see README.md, "Setup").
-// Paste this whole file into the sheet's Extensions → Apps Script, set the PASSCODE
+// Paste this whole file into the sheet's Extensions → Apps Script, set the ADMIN_PASSCODE
 // script property, and deploy it as a web app (Execute as: Me, Who has access: Anyone).
 //
-// Everything goes through POST with the family passcode, which lives only in this script's
-// properties, never in the web page: without it you can't even see the list. With it,
-// family members see the list and mark what they're getting. Adding, changing and deleting wishes, and the Admin tools, are
-// for the name Admin only: Admin uses ADMIN_PASSCODE once one is set, and the family
-// passcode until then.
+// Everything goes through POST. The family link (…/?k=…) carries LINK_KEY, which this script
+// makes the first time Admin signs in and keeps in its properties: without it you can't even
+// see the list. With it, family members see the list and type their name to mark what they're
+// getting. Adding, changing and deleting wishes, and the Admin tools, need ADMIN_PASSCODE
+// (or the old family PASSCODE, until an admin passcode is set).
 
 const COLUMNS = ['id', 'name', 'url', 'image', 'price', 'store', 'priority', 'category', 'details',
                  'addedBy', 'added', 'claimedBy', 'claimed'];
@@ -19,18 +19,17 @@ const SHEETS = {
 };
 const KEEP = { Deleted: 200, Log: 500 }; // the oldest rows past these are dropped
 // Longest text each field may hold.
-const LIMITS = { name: 200, url: 2000, image: 2000, price: 40, store: 80, category: 40, details: 1000, who: 60, passcode: 100 };
+const LIMITS = { name: 200, url: 2000, image: 2000, price: 40, store: 80, category: 40, details: 1000, who: 30, passcode: 100 };
 // What the Categories tab starts with. Admin adds, renames and deletes them from there on.
 const DEFAULT_CATEGORIES = ['Car', 'Tech', 'Tool'];
-const ADMIN_NAME = 'admin';
 // What only Admin may do. The Admin panel's own actions also answer with what the panel shows.
-const PANEL_ACTIONS = ['admin-info', 'set-passcode', 'set-admin-passcode', 'restore', 'remove-taken',
+const PANEL_ACTIONS = ['admin-info', 'new-link', 'set-admin-passcode', 'restore', 'remove-taken',
                        'add-category', 'rename-category', 'delete-category'];
 const ADMIN_ACTIONS = ['save', 'delete', 'preview'].concat(PANEL_ACTIONS);
 
-// The list is only for people who are signed in, so there's nothing to see here.
+// The list is only for people with the family link, so there's nothing to see here.
 function doGet() {
-  return json({ error: 'sign-in-needed' });
+  return json({ error: 'needs-link' });
 }
 
 function doPost(e) {
@@ -41,19 +40,28 @@ function doPost(e) {
     return json({ error: 'bad-request' });
   }
   const props = PropertiesService.getScriptProperties();
-  if (!props.getProperty('PASSCODE')) return json({ error: 'no-passcode-set' });
+  const adminTry = text(req.adminPasscode) !== '';
+  if (adminTry && !props.getProperty('ADMIN_PASSCODE') && !props.getProperty('PASSCODE')) {
+    return json({ error: 'no-passcode-set' });
+  }
   const role = roleOf(req, props);
   if (!role) {
-    Utilities.sleep(1500); // makes guessing slow
-    return json({ error: 'wrong-passcode' });
+    if (adminTry || text(req.key)) Utilities.sleep(1500); // makes guessing slow
+    return json({ error: adminTry ? 'wrong-passcode' : 'needs-link' });
   }
-  if (req.action === 'check') return json(Object.assign({ ok: true, isAdmin: role === 'admin' }, theList()));
+  if (req.action === 'check') {
+    const out = { ok: true, isAdmin: role === 'admin' };
+    if (role === 'admin') out.linkKey = linkKey(props);
+    return json(Object.assign(out, theList()));
+  }
   if (req.action === 'list') return json(Object.assign({ ok: true }, theList()));
   if (ADMIN_ACTIONS.indexOf(req.action) >= 0 && role !== 'admin') return json({ error: 'not-admin' });
   if (req.action === 'preview') return json({ preview: previewLink(req.url) });
   if (req.action === 'admin-info') return json({ ok: true, adminInfo: adminInfo(props) });
 
-  const who = clean(req.who, LIMITS.who) || 'Someone';
+  // The name typed when claiming. Admin's own changes are logged as Admin.
+  const typed = text(req.who).replace(/\s+/g, ' ').slice(0, LIMITS.who).trim();
+  const who = role === 'admin' ? 'Admin' : typed || 'Someone';
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -69,9 +77,10 @@ function doPost(e) {
         break;
       }
       case 'claim': {
-        const claimed = claimItem(req.id, who);
+        if (!typed) throw new Error('Type your name first.');
+        const claimed = claimItem(req.id, typed);
         if (claimed.takenBy) return json(Object.assign({ error: 'already-claimed', claimedBy: claimed.takenBy }, theList()));
-        log(who, 'claimed', claimed.name);
+        log(typed, 'claimed', claimed.name);
         break;
       }
       case 'unclaim': {
@@ -92,12 +101,12 @@ function doPost(e) {
         if (name) log(who, 'category-deleted', name);
         break;
       }
-      case 'set-passcode':
-        setPasscode(props, 'PASSCODE', req.newPasscode, props.getProperty('ADMIN_PASSCODE'));
-        log(who, 'family-passcode', '');
+      case 'new-link':
+        props.setProperty('LINK_KEY', newLinkKey());
+        log(who, 'new-link', '');
         break;
       case 'set-admin-passcode':
-        setPasscode(props, 'ADMIN_PASSCODE', req.newPasscode, props.getProperty('PASSCODE'));
+        setAdminPasscode(props, req.newPasscode);
         log(who, 'admin-passcode', '');
         break;
       default: return json({ error: 'bad-request' });
@@ -123,33 +132,51 @@ function json(obj) {
 
 // ---- Who's asking ----
 
+function text(s) {
+  return String(s == null ? '' : s).trim();
+}
+
 // Spaces around a passcode and capital letters don't matter, so it's easy to type on a phone.
 function norm(s) {
-  return String(s == null ? '' : s).trim().toLowerCase();
+  return text(s).toLowerCase();
 }
 
-// 'admin' for the name Admin with the admin passcode (the family passcode until an admin
-// passcode is set), 'family' for anyone else with the family passcode, or '' for neither.
+// 'admin' with the admin passcode (the old family PASSCODE until an admin passcode is set),
+// 'family' with the family link's key, or '' for neither.
 function roleOf(req, props) {
-  const family = props.getProperty('PASSCODE');
-  const admin = props.getProperty('ADMIN_PASSCODE');
-  const given = norm(req.passcode);
-  if (norm(req.who) === ADMIN_NAME) return given === norm(admin || family) ? 'admin' : '';
-  return given === norm(family) ? 'family' : '';
+  if (text(req.adminPasscode)) {
+    const admin = props.getProperty('ADMIN_PASSCODE') || props.getProperty('PASSCODE');
+    return admin && norm(req.adminPasscode) === norm(admin) ? 'admin' : '';
+  }
+  const key = props.getProperty('LINK_KEY');
+  return key && text(req.key) === key ? 'family' : '';
 }
 
-function setPasscode(props, key, value, other) {
-  const passcode = String(value == null ? '' : value).trim();
+// The family link's key, made the first time it's asked for.
+function linkKey(props) {
+  let key = props.getProperty('LINK_KEY');
+  if (!key) {
+    key = newLinkKey();
+    props.setProperty('LINK_KEY', key);
+  }
+  return key;
+}
+
+function newLinkKey() {
+  return Utilities.getUuid().replace(/-/g, '').slice(0, 12);
+}
+
+function setAdminPasscode(props, value) {
+  const passcode = text(value);
   if (passcode.length < 6) throw new Error('Use at least 6 characters. Three short words work well.');
   if (passcode.length > LIMITS.passcode) throw new Error('That passcode is too long.');
-  if (other && norm(passcode) === norm(other)) throw new Error('The family and admin passcodes need to be different.');
-  props.setProperty(key, passcode);
+  props.setProperty('ADMIN_PASSCODE', passcode);
 }
 
 // What the Admin tools show: the newest activity and deleted wishes first.
 function adminInfo(props) {
   return {
-    familyPasscode: props.getProperty('PASSCODE'),
+    linkKey: linkKey(props),
     hasAdminPasscode: !!props.getProperty('ADMIN_PASSCODE'),
     deleted: records(table('Deleted')).reverse().slice(0, 50).map(strip),
     log: records(table('Log')).reverse().slice(0, 150).map(strip),
@@ -325,11 +352,12 @@ function restoreItem(id) {
 }
 
 // Returns { name } once claimed, or { takenBy } if someone else claimed it first.
+// The same name in different capitals ("mom", "Mom") is the same person.
 function claimItem(id, who) {
   const t = table('Items');
   const found = findRecord(t, id);
   if (!found) throw new Error('That wish was removed');
-  if (found.claimedBy && found.claimedBy !== who) return { takenBy: found.claimedBy };
+  if (found.claimedBy && norm(found.claimedBy) !== norm(who)) return { takenBy: found.claimedBy };
   writeCells(t, found.row, { claimedBy: who, claimed: new Date().toISOString() });
   return { name: found.name };
 }
