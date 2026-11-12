@@ -2,7 +2,7 @@
 
 A shareable wish list, titled **Erik's Christmas List** on the page, at **https://erikfol.github.io/erik-wish-list/** (once GitHub Pages is on, see Setup).
 
-Each wish has a picture, a link to the product, the price, the store, how much Erik wants it (Top pick, Would love, Nice to have), a category (or none) and details like size or color. Friends and family tap **🎁 I'll get this** on what they're buying, so nobody doubles up.
+Each wish has a picture, a link to the product, the price, the store, a category (or none) and details like size or color. Friends and family tap **🎁 I'll get this** on what they're buying, so nobody doubles up.
 
 - **The family link opens the list.** It looks like `https://erikfol.github.io/erik-wish-list/?k=7f3a9c21b4e0`: the `?k=…` part is a random key the Google script makes and checks. Nobody signs in. Anyone who opens the plain address without the key sees only a message asking for the family link, and the script won't hand over the list without the key, so the wishes can't be read by digging into the page or this repo either. Once a device has opened the family link it remembers the key.
 - **Claiming a gift:** tap **🎁 I'll get this**, type your name and tap **Mark it as mine**. The page remembers the name on that device for next time. Names are up to 30 characters, and "mom" and "Mom" count as the same person. Anyone can tap **Undo** on a claim; if it's under someone else's name, the page asks first.
@@ -52,7 +52,7 @@ Until `SCRIPT_URL` in `docs/js/config.js` is filled in, the page runs as a **dem
 ## Day to day
 
 - **Replace the family link** (for example, if it got passed around too far): sign in as Admin and use ⚙ Admin → Family link → Make a new link. The old link stops working right away.
-- **Edit in the sheet:** the `Items` tab is the list, and the page shows any changes made there. `priority` is 3 (Top pick), 2 (Would love) or 1 (Nice to have), and `category` is one of the names in the `Categories` tab (blank for none). Keep the header row; the columns can be in any order.
+- **Edit in the sheet:** the `Items` tab is the list, and the page shows any changes made there. `category` is one of the names in the `Categories` tab (blank for none). Keep the header row; the columns can be in any order.
 - **After changing `Code.gs`:** paste it into Apps Script again, then **Deploy → Manage deployments → ✎ (Edit) → Version: New version → Deploy**. This keeps the same URL.
 - **Good to know:** everyone with the family link sees the whole list, including who's getting what (unless they turn on no-spoiler mode), and can claim or undo a claim under any name. The Recent activity log shows who did what.
 

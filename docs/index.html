@@ -52,10 +52,9 @@
         <div id="toolbar" class="toolbar">
             <label>Sort
                 <select id="sort">
-                    <option value="priority">Top picks first</option>
+                    <option value="new">Newest first</option>
                     <option value="low">Price: low to high</option>
                     <option value="high">Price: high to low</option>
-                    <option value="new">Newest first</option>
                 </select>
             </label>
             <label id="show-wrap">Show
@@ -140,18 +139,9 @@
                     <input id="f-store" type="text" maxlength="80" placeholder="Amazon">
                 </label>
             </div>
-            <div class="two">
-                <label><span id="f-priority-label">How much Erik wants it</span>
-                    <select id="f-priority">
-                        <option value="3">Top pick</option>
-                        <option value="2">Would love</option>
-                        <option value="1">Nice to have</option>
-                    </select>
-                </label>
-                <label>Category
-                    <select id="f-category"></select>
-                </label>
-            </div>
+            <label>Category
+                <select id="f-category"></select>
+            </label>
             <label>Details
                 <textarea id="f-details" rows="3" maxlength="1000" placeholder="Size, color, model, how many… anything that helps"></textarea>
             </label>

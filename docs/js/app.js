@@ -4,7 +4,6 @@
 import { SCRIPT_URL, SHEET_URL } from './config.js';
 
 const OWNER = 'Erik';
-const PRIORITY = { 3: 'Top pick', 2: 'Would love', 1: 'Nice to have' };
 const DEMO = !SCRIPT_URL;
 
 const $ = id => document.getElementById(id);
@@ -79,18 +78,18 @@ async function post(body) {
 }
 
 function setItems(list) {
-    items = list.map(i => ({ ...i, priority: PRIORITY[i.priority] ? Number(i.priority) : 2, category: i.category || '' }));
+    items = list.map(i => ({ ...i, category: i.category || '' }));
     loadedAt = Date.now();
 }
 
 // ---- Demo mode: the same answers as Code.gs, kept in this browser ----
 
 const SAMPLES = [
-    { id: 's1', name: 'Wool hiking socks (3-pack)', url: '', image: '', price: '24.99', store: 'REI', priority: 3,
+    { id: 's1', name: 'Wool hiking socks (3-pack)', url: '', image: '', price: '24.99', store: 'REI',
       details: 'Size L. Gray or green.', addedBy: 'Erik', added: '2026-10-30T12:00:00Z', claimedBy: '', claimed: '' },
-    { id: 's2', name: '12" cast iron skillet', url: '', image: '', price: '39.90', store: 'Amazon', priority: 2,
+    { id: 's2', name: '12" cast iron skillet', url: '', image: '', price: '39.90', store: 'Amazon',
       details: '', addedBy: 'Erik', added: '2026-10-29T12:00:00Z', claimedBy: 'Mom', claimed: '2026-10-30T15:00:00Z' },
-    { id: 's3', name: 'A good book (surprise me!)', url: '', image: '', price: '', store: '', priority: 1,
+    { id: 's3', name: 'A good book (surprise me!)', url: '', image: '', price: '', store: '',
       details: 'Mysteries or history.', addedBy: 'Erik', added: '2026-10-28T12:00:00Z', claimedBy: '', claimed: '' },
 ];
 
@@ -113,8 +112,8 @@ const demo = {
             case 'list': return { ok: true, items: list, categories: DEMO_CATEGORIES };
             case 'preview': return { preview: {} };
             case 'save': {
-                const { name, url, image, price, store, priority, category, details } = req.item;
-                const values = { name, url, image, price, store, priority, category, details };
+                const { name, url, image, price, store, category, details } = req.item;
+                const values = { name, url, image, price, store, category, details };
                 if (item) Object.assign(item, values);
                 else if (req.item.id) return { error: 'failed', message: 'That wish was removed' };
                 else list.push({ ...values, id: String(Date.now()), addedBy: req.who, added: now, claimedBy: '', claimed: '' });
@@ -253,7 +252,6 @@ function visibleItems() {
     const newer = (a, b) => String(b.added).localeCompare(String(a.added));
     const price = (i, missing) => priceNumber(i.price) ?? missing;
     const order = {
-        priority: (a, b) => b.priority - a.priority || newer(a, b),
         low: (a, b) => price(a, 1e12) - price(b, 1e12) || newer(a, b),
         high: (a, b) => price(b, -1) - price(a, -1) || newer(a, b),
         new: newer,
@@ -358,7 +356,6 @@ function card(item) {
         h('div', { class: 'card-body' },
             h('h3', {}, url ? h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, item.name) : item.name),
             h('div', { class: 'meta' },
-                h('span', { class: `badge p${item.priority}` }, PRIORITY[item.priority]),
                 item.category && h('span', { class: 'cat' }, item.category),
                 meta),
             item.details && h('p', { class: 'details' }, item.details),
@@ -479,14 +476,13 @@ $('signin').addEventListener('click', () => {
 
 // ---- Adding and changing wishes ----
 
-const FIELDS = { name: 'f-name', url: 'f-url', image: 'f-image', price: 'f-price', store: 'f-store', priority: 'f-priority', category: 'f-category', details: 'f-details' };
+const FIELDS = { name: 'f-name', url: 'f-url', image: 'f-image', price: 'f-price', store: 'f-store', category: 'f-category', details: 'f-details' };
 
 function openItem(item) {
     editing = item || {};
     $('item-title').textContent = item ? 'Change this wish' : 'Add a wish';
     fillItemCategories(editing.category);
     for (const [field, id] of Object.entries(FIELDS)) $(id).value = editing[field] ?? '';
-    $('f-priority').value = String(editing.priority || 2);
     $('delete').hidden = !item;
     $('fill-status').textContent = '';
     showError('item-error', '');
@@ -583,7 +579,6 @@ $('item-form').addEventListener('submit', async e => {
     fixLink($('f-image'));
     const item = { id: editing.id || '' };
     for (const [field, id] of Object.entries(FIELDS)) item[field] = $(id).value.trim();
-    item.priority = Number(item.priority);
     for (const [field, label] of [['url', 'link'], ['image', 'picture address']]) {
         if (item[field] && !safeLink(item[field])) return showError('item-error', `The ${label} needs to start with https://`);
     }
@@ -859,7 +854,7 @@ document.addEventListener('visibilitychange', () => {
     if (!document.hidden && Date.now() - loadedAt > 60000) load();
 });
 
-if (['priority', 'low', 'high', 'new'].includes(saved.get('wish-sort'))) $('sort').value = saved.get('wish-sort');
+if (['low', 'high', 'new'].includes(saved.get('wish-sort'))) $('sort').value = saved.get('wish-sort');
 $('sheet-link').href = SHEET_URL;
 $('demo-banner').hidden = !DEMO;
 render();

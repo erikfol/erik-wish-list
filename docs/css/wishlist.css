@@ -210,13 +210,6 @@ select:focus, input:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .card h3 a { color: inherit; text-decoration: none; }
 .card h3 a:hover { text-decoration: underline; }
 .meta { font-size: 0.84em; color: var(--muted); display: flex; align-items: center; gap: 4px 8px; flex-wrap: wrap; }
-.badge {
-    font-size: 0.85em; font-weight: 700;
-    padding: 2px 8px; border-radius: 10px;
-    background: #eef1f6; color: #556;
-}
-.badge.p3 { background: var(--red); color: #fff; }
-.badge.p2 { background: #fbefcd; color: #7a5300; }
 .details { font-size: 0.86em; line-height: 1.4; white-space: pre-line; color: #444; }
 .side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .price { font-weight: 700; font-size: 1.15em; white-space: nowrap; }
